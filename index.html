@@ -233,6 +233,9 @@
   .data-box p{font-size:14px;color:var(--ink-soft);margin:0 0 14px;flex:1}
   .save-note{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--field-deep);font-weight:600;margin:0 0 16px}
   .save-note .dot{width:9px;height:9px;border-radius:50%;background:var(--field);box-shadow:0 0 0 3px rgba(28,128,73,.18)}
+  .sync-status{font-size:13px;font-weight:600;color:var(--ink-soft);margin:12px 0 0}
+  .sync-status[data-kind="ok"]{color:var(--field-deep)}
+  .sync-status[data-kind="err"]{color:var(--red-deep)}
   pre.code-block{background:#0f1a13;color:#dfe9e0;border-radius:10px;padding:14px;overflow-x:auto;font-size:12.5px;line-height:1.55;margin:10px 0 0}
 
   @media(max-width:640px){
@@ -333,17 +336,53 @@ async function loadData(){
 async function saveData(){
   memFallback = state;
   const payload = JSON.stringify(state);
+  let done=false;
   if(hasClaudeStorage()){
-    try{
-      const r = await window.storage.set(KEY, payload);
-      if(r){ persistOK=true; hideWarn(); return; }
-    }catch(e){}
+    try{ const r=await window.storage.set(KEY,payload); if(r){ persistOK=true; hideWarn(); done=true; } }catch(e){}
   }
-  try{
-    localStorage.setItem(KEY, payload);
-    persistOK=true; hideWarn(); return;
-  }catch(e){}
-  persistOK=false; showWarn();
+  if(!done){
+    try{ localStorage.setItem(KEY,payload); persistOK=true; hideWarn(); done=true; }catch(e){}
+  }
+  if(!done){ persistOK=false; showWarn(); }
+  if(syncUrl) pushSoon(); // invia al Drive se la sincronizzazione è attiva
+}
+
+/* =========================================================
+   SINCRONIZZAZIONE CON GOOGLE DRIVE (via app Web Apps Script)
+   ========================================================= */
+// Per attivarla su tutta la pagina, incolla qui l'URL dell'app Web (finisce con /exec):
+const SYNC_URL = "";
+const SYNC_KEY = "calcetto:sync";
+let syncUrl = "";
+
+// File JSON condiviso caricato in automatico dalla stessa cartella del sito (es. GitHub Pages)
+const DATA_FILE = "risultati.json";
+let dataSource = "locale"; // "locale" | "file" | "drive"
+
+function loadSyncUrl(){ try{ return localStorage.getItem(SYNC_KEY)||""; }catch(e){ return ""; } }
+function persistSyncUrl(u){ try{ if(u) localStorage.setItem(SYNC_KEY,u); else localStorage.removeItem(SYNC_KEY); }catch(e){} }
+function setSyncStatus(msg, kind){ const el=document.getElementById("syncStatus"); if(el){ el.textContent=msg; el.dataset.kind=kind||""; } }
+
+async function cloudPull(){
+  const res = await fetch(syncUrl, {method:"GET"});
+  if(!res.ok) throw new Error("HTTP "+res.status);
+  return JSON.parse(await res.text());
+}
+async function cloudPush(){
+  // text/plain evita il preflight CORS che Apps Script non gestisce
+  const res = await fetch(syncUrl, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(state)});
+  if(!res.ok) throw new Error("HTTP "+res.status);
+  return true;
+}
+let pushTimer=null;
+function pushSoon(){
+  if(!syncUrl) return;
+  clearTimeout(pushTimer);
+  setSyncStatus("Salvataggio sul Drive…");
+  pushTimer=setTimeout(async ()=>{
+    try{ await cloudPush(); setSyncStatus("Salvato sul Drive ✓","ok"); }
+    catch(e){ setSyncStatus("Errore nel salvataggio sul Drive","err"); }
+  }, 700);
 }
 
 /* =========================================================
@@ -780,37 +819,52 @@ function exportJSON(){
   toast("Backup scaricato");
 }
 
+function exportResultsFile(){
+  const data = JSON.stringify(buildExport(), null, 2);
+  const blob = new Blob([data], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = DATA_FILE; // "risultati.json"
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  toast("Scaricato risultati.json — caricalo nel repository e fai commit");
+}
+
+function normalizeImport(obj){
+  const players = Array.isArray(obj.players) ? obj.players : null;
+  const matches = Array.isArray(obj.matches) ? obj.matches : null;
+  if(!players || !matches) throw new Error("non è un backup del calcetto");
+  const okP = players.every(p=>p && p.id && typeof p.name==="string");
+  const okM = matches.every(m=>m && m.id && Array.isArray(m.a)&&m.a.length===2 &&
+              Array.isArray(m.b)&&m.b.length===2 && m.date &&
+              Number.isFinite(+m.sa) && Number.isFinite(+m.sb));
+  if(!okP || !okM) throw new Error("dati incompleti o nel formato sbagliato");
+  return {
+    players: players.map(p=>({id:String(p.id), name:String(p.name)})),
+    matches: matches.map(m=>({id:String(m.id), date:m.date, a:[String(m.a[0]),String(m.a[1])],
+              b:[String(m.b[0]),String(m.b[1])], sa:+m.sa, sb:+m.sb, ts:m.ts||Date.now()})),
+    settings: {
+      minSolo: Number.isFinite(+obj.settings?.minSolo) ? Math.max(1,Math.min(50,+obj.settings.minSolo)) : DEFAULT_MIN_SOLO,
+      minPair: Number.isFinite(+obj.settings?.minPair) ? Math.max(1,Math.min(50,+obj.settings.minPair)) : DEFAULT_MIN_PAIR
+    }
+  };
+}
+
 async function parseAndApply(text){
   let obj;
   try{ obj = JSON.parse(text); }
   catch(e){ toast("Testo non valido: non è in formato JSON"); return; }
-  try{
-    const players = Array.isArray(obj.players) ? obj.players : null;
-    const matches = Array.isArray(obj.matches) ? obj.matches : null;
-    if(!players || !matches) throw new Error("non è un backup del calcetto");
-    const okP = players.every(p=>p && p.id && typeof p.name==="string");
-    const okM = matches.every(m=>m && m.id && Array.isArray(m.a)&&m.a.length===2 &&
-                Array.isArray(m.b)&&m.b.length===2 && m.date &&
-                Number.isFinite(+m.sa) && Number.isFinite(+m.sb));
-    if(!okP || !okM) throw new Error("dati incompleti o nel formato sbagliato");
-    if(!(await confirmDialog(`Importare ${players.length} giocatori e ${matches.length} partite?\nI dati attualmente presenti verranno sostituiti.`, "Importa"))) return;
-    state = {
-      players: players.map(p=>({id:String(p.id), name:String(p.name)})),
-      matches: matches.map(m=>({id:String(m.id), date:m.date, a:[String(m.a[0]),String(m.a[1])],
-                b:[String(m.b[0]),String(m.b[1])], sa:+m.sa, sb:+m.sb, ts:m.ts||Date.now()})),
-      settings: {
-        minSolo: Number.isFinite(+obj.settings?.minSolo) ? Math.max(1,Math.min(50,+obj.settings.minSolo)) : DEFAULT_MIN_SOLO,
-        minPair: Number.isFinite(+obj.settings?.minPair) ? Math.max(1,Math.min(50,+obj.settings.minPair)) : DEFAULT_MIN_PAIR
-      }
-    };
-    saveData();
-    season="all"; rebuildSeasons();
-    const ssel=document.getElementById("season"); if(ssel) ssel.value="all";
-    toast("Dati importati");
-    view="solo"; render();
-  }catch(e){
-    toast("Backup non valido: "+e.message);
-  }
+  let next;
+  try{ next = normalizeImport(obj); }
+  catch(e){ toast("Backup non valido: "+e.message); return; }
+  if(!(await confirmDialog(`Importare ${next.players.length} giocatori e ${next.matches.length} partite?\nI dati attualmente presenti verranno sostituiti.`, "Importa"))) return;
+  state = next;
+  saveData();
+  season="all"; rebuildSeasons();
+  const ssel=document.getElementById("season"); if(ssel) ssel.value="all";
+  toast("Dati importati");
+  view="solo"; render();
 }
 function importJSON(file){
   const reader = new FileReader();
@@ -844,11 +898,34 @@ function renderData(){
     }
   ]
 }`;
+  const srcMsg = dataSource==="file"
+      ? "In uso ora: il file risultati.json del sito ✓"
+      : (dataSource==="drive" ? "In uso ora: i dati dal Google Drive ✓" : "In uso ora: i dati salvati su questo browser");
   views.innerHTML = `
   <section class="card">
     <h2>Dati e backup</h2>
     <p class="save-note"><span class="dot"></span> Salvataggio automatico attivo: ogni partita resta memorizzata su questo dispositivo.</p>
-    <p class="muted">Qui puoi scaricare una copia completa in JSON da conservare o spostare su un altro dispositivo, e ripristinarla quando vuoi.</p>
+
+    <div class="data-box" style="margin-bottom:14px">
+      <h3>File condiviso del sito — risultati.json</h3>
+      <p>All'apertura la pagina carica in automatico il file <code>risultati.json</code> dalla stessa cartella del sito, se presente. Per aggiornare la classifica che vedono tutti: premi il pulsante qui sotto e carica il file ottenuto nel repository (stessa cartella, stesso nome), poi fai commit.</p>
+      <button class="btn" id="btnExportResults">Scarica risultati.json</button>
+      <p class="sync-status" id="dataSourceNote" data-kind="${dataSource==='locale'?'':'ok'}">${srcMsg}</p>
+    </div>
+
+    <div class="data-box" style="margin-bottom:14px">
+      <h3>Sincronizzazione con Google Drive</h3>
+      <p>In alternativa al file: incolla l'URL dell'app Web di Apps Script (finisce con <code>/exec</code>) e la pagina legge <em>e salva</em> le partite lì, in automatico, senza dover ricaricare nulla a mano.</p>
+      <input type="text" class="text" id="syncUrlInput" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(syncUrl)}">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn" id="btnSaveSync">Attiva</button>
+        <button class="btn ghost" id="btnPullSync">Sincronizza ora</button>
+        <button class="btn ghost" id="btnClearSync">Disattiva</button>
+      </div>
+      <p class="sync-status" id="syncStatus" data-kind="${syncUrl?'ok':''}">${syncUrl ? "Sincronizzazione attiva ✓" : "Non configurata"}</p>
+    </div>
+
+    <p class="muted">Puoi comunque scaricare una copia completa in JSON da conservare, e ripristinarla quando vuoi.</p>
     <div class="data-grid">
       <div class="data-box">
         <h3>Esporta</h3>
@@ -879,6 +956,7 @@ function renderData(){
   </section>`;
 
   document.getElementById("btnExport").addEventListener("click", exportJSON);
+  document.getElementById("btnExportResults").addEventListener("click", exportResultsFile);
   const fileInput = document.getElementById("fileImport");
   fileInput.addEventListener("change", e=>{
     const f=e.target.files[0]; if(f) importJSON(f); e.target.value="";
@@ -895,6 +973,47 @@ function renderData(){
     const txt = area.value.trim();
     if(!txt){ toast("Incolla prima un backup nel riquadro"); return; }
     importText(txt);
+  });
+
+  const syncInput = document.getElementById("syncUrlInput");
+  document.getElementById("btnSaveSync").addEventListener("click", async ()=>{
+    const u=(syncInput.value||"").trim();
+    if(!/^https:\/\/script\.google\.com\/.*\/exec$/.test(u)){ toast("URL non valido: deve essere l'app Web che finisce con /exec"); return; }
+    syncUrl=u; persistSyncUrl(u);
+    setSyncStatus("Connessione…");
+    try{
+      const cloud = await cloudPull();
+      const next = normalizeImport(cloud);
+      if(next.players.length || next.matches.length){
+        state = next; season="all"; rebuildSeasons();
+        setSyncStatus("Sincronizzazione attiva ✓","ok");
+        toast("Collegato: dati caricati dal Drive");
+        view="solo"; render();
+      }else{
+        await cloudPush(); // Drive vuoto: ci carico i dati attuali
+        setSyncStatus("Sincronizzazione attiva ✓","ok");
+        toast("Collegato: dati attuali caricati sul Drive");
+        renderData();
+      }
+    }catch(e){
+      setSyncStatus("Collegamento non riuscito — controlla URL e permessi","err");
+      toast("Impossibile collegarsi al Drive");
+    }
+  });
+  document.getElementById("btnPullSync").addEventListener("click", async ()=>{
+    if(!syncUrl){ toast("Sincronizzazione non attiva"); return; }
+    setSyncStatus("Lettura dal Drive…");
+    try{
+      const next = normalizeImport(await cloudPull());
+      state = next; season="all"; rebuildSeasons();
+      setSyncStatus("Aggiornato dal Drive ✓","ok");
+      view="solo"; render();
+    }catch(e){ setSyncStatus("Drive non raggiungibile","err"); }
+  });
+  document.getElementById("btnClearSync").addEventListener("click", ()=>{
+    persistSyncUrl(""); syncUrl = SYNC_URL || "";
+    setSyncStatus(syncUrl ? "Attiva dall'URL nel codice" : "Sincronizzazione disattivata", syncUrl?"ok":"");
+    toast("Sincronizzazione disattivata");
   });
 }
 
@@ -968,6 +1087,7 @@ document.getElementById("season").addEventListener("change", e=>{ season=e.targe
    ========================================================= */
 (async function init(){
   wireModal();
+  syncUrl = loadSyncUrl() || SYNC_URL;
   state = await loadData();
   if(!state.players) state.players=[];
   if(!state.matches) state.matches=[];
@@ -975,5 +1095,27 @@ document.getElementById("season").addEventListener("change", e=>{ season=e.targe
   if(!persistOK) document.getElementById("storageWarn").style.display="block";
   rebuildSeasons();
   render();
+  // Fonte principale dei dati, in ordine: Drive (Apps Script) → file risultati.json → dati locali
+  if(syncUrl){
+    try{
+      const next = normalizeImport(await cloudPull());
+      state = next; dataSource = "drive";
+      rebuildSeasons();
+      render();
+    }catch(e){
+      toast("Drive non raggiungibile: uso i dati locali");
+    }
+  } else {
+    // Carico il file condiviso pubblicato nella stessa cartella (GitHub Pages, ecc.)
+    try{
+      const res = await fetch(DATA_FILE + "?v=" + Date.now(), {cache:"no-store"});
+      if(res.ok){
+        const next = normalizeImport(JSON.parse(await res.text()));
+        state = next; dataSource = "file";
+        rebuildSeasons();
+        render();
+      }
+    }catch(e){ /* file assente o non ancora presente: uso i dati locali */ }
+  }
 })();
 </script>
