@@ -1,0 +1,979 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calcetto Balilla — Classifiche</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --field:#1c8049;
+    --field-deep:#136236;
+    --field-line:#eef3ec;
+    --wood:#c08a4e;
+    --wood-deep:#8a5a2c;
+    --red:#e23b3b;
+    --red-deep:#b32424;
+    --blue:#1f6fc4;
+    --blue-deep:#15539a;
+    --ink:#16241c;
+    --ink-soft:#5a6b60;
+    --paper:#f6f7f2;
+    --card:#ffffff;
+    --line:#e2e6dc;
+    --shadow:0 1px 0 rgba(20,40,28,.04), 0 10px 30px -18px rgba(20,40,28,.35);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:"Archivo",system-ui,sans-serif;
+    color:var(--ink);
+    background:var(--paper);
+    -webkit-font-smoothing:antialiased;
+    line-height:1.45;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:0 16px 64px}
+
+  /* ---------- HERO: il campo ---------- */
+  .hero{
+    position:relative;
+    margin:16px 0 0;
+    border-radius:18px;
+    overflow:hidden;
+    background:
+      linear-gradient(0deg, rgba(0,0,0,.10), rgba(255,255,255,.05)),
+      repeating-linear-gradient(90deg, var(--field) 0 56px, var(--field-deep) 56px 112px);
+    border:6px solid var(--wood);
+    box-shadow:var(--shadow), inset 0 0 0 2px var(--wood-deep);
+    color:#fff;
+  }
+  .hero-svg{position:absolute;inset:0;width:100%;height:100%;opacity:.9;pointer-events:none}
+  .hero-inner{position:relative;padding:30px 26px 26px}
+  .eyebrow{
+    font-size:12px;letter-spacing:.22em;text-transform:uppercase;
+    font-weight:700;color:rgba(255,255,255,.82);margin:0 0 6px
+  }
+  h1{
+    font-family:"Anton",sans-serif;font-weight:400;
+    text-transform:uppercase;letter-spacing:.01em;
+    font-size:clamp(34px,7vw,60px);line-height:.92;margin:0;
+    text-shadow:0 2px 0 rgba(0,0,0,.18);
+  }
+  .hero-sub{margin:8px 0 0;color:rgba(255,255,255,.9);max-width:46ch}
+  .season-bar{
+    position:relative;display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+    margin-top:18px
+  }
+  .season-bar label{font-size:13px;color:rgba(255,255,255,.85);font-weight:600}
+  select.season{
+    appearance:none;font-family:inherit;font-weight:600;font-size:14px;
+    color:var(--ink);background:#fff;border:0;border-radius:999px;
+    padding:9px 36px 9px 16px;cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2316241c' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 14px center;
+  }
+
+  /* ---------- TABS ---------- */
+  .tabs{display:flex;gap:8px;margin:18px 0 22px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+  .tab{
+    flex:0 0 auto;border:1px solid var(--line);background:var(--card);
+    font-family:inherit;font-weight:600;font-size:14px;color:var(--ink-soft);
+    padding:10px 16px;border-radius:999px;cursor:pointer;transition:.15s;white-space:nowrap
+  }
+  .tab:hover{border-color:#cdd4c5}
+  .tab[aria-selected="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  /* ---------- CARDS ---------- */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:20px}
+  .card + .card{margin-top:16px}
+  h2{font-family:"Anton",sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.02em;font-size:22px;margin:0 0 4px}
+  .card-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .card-head h2{margin:0}
+  .head-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .minctl{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-soft);font-weight:600;border:1px solid var(--line);border-radius:999px;padding:4px 6px 4px 12px}
+  .stepper.mini{gap:4px}
+  .stepper.mini button{width:28px;height:28px;font-size:16px;border-radius:7px}
+  .mgval{font-family:"Anton",sans-serif;font-size:16px;color:var(--ink);min-width:20px;text-align:center;font-variant-numeric:tabular-nums}
+  .muted{color:var(--ink-soft);font-size:14px;margin:0 0 16px}
+
+  /* ---------- NUOVA PARTITA ---------- */
+  .match{display:grid;grid-template-columns:1fr auto 1fr;gap:16px;align-items:stretch}
+  .team{border-radius:14px;padding:16px;border:2px solid;display:flex;flex-direction:column;gap:10px}
+  .team.red{border-color:var(--red);background:linear-gradient(180deg,#fdecec,#fff)}
+  .team.blue{border-color:var(--blue);background:linear-gradient(180deg,#e9f1fb,#fff)}
+  .team h3{margin:0;font-family:"Anton",sans-serif;font-weight:400;letter-spacing:.04em;text-transform:uppercase;font-size:15px}
+  .team.red h3{color:var(--red-deep)} .team.blue h3{color:var(--blue-deep)}
+  .pick{display:flex;flex-direction:column;gap:8px}
+  select.player{
+    appearance:none;font-family:inherit;font-size:15px;font-weight:500;color:var(--ink);
+    background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 34px 11px 12px;width:100%;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2316241c' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 12px center;
+  }
+  select.player:focus{outline:2px solid var(--field);outline-offset:1px}
+  .scoreboard{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-width:96px}
+  .vs{font-family:"Anton",sans-serif;color:var(--ink-soft);font-size:16px;letter-spacing:.1em}
+  .counter{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .counter .num{
+    font-family:"Anton",sans-serif;font-size:46px;line-height:1;min-width:64px;text-align:center;
+    background:var(--ink);color:#fff;border-radius:10px;padding:8px 6px;font-variant-numeric:tabular-nums;
+  }
+  .team.red .counter .num{background:var(--red-deep)}
+  .team.blue .counter .num{background:var(--blue-deep)}
+  .stepper{display:flex;gap:6px}
+  .stepper button{
+    width:34px;height:34px;border-radius:8px;border:1px solid var(--line);background:#fff;
+    font-size:20px;font-weight:700;color:var(--ink);cursor:pointer;line-height:1
+  }
+  .stepper button:hover{background:#f0f2ec}
+  .match-foot{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-top:18px}
+  .date-field{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink-soft)}
+  input[type=date]{font-family:inherit;font-size:14px;border:1px solid var(--line);border-radius:10px;padding:9px 12px;color:var(--ink)}
+  .btn{
+    font-family:inherit;font-weight:700;font-size:15px;border:0;border-radius:11px;cursor:pointer;
+    padding:13px 22px;background:var(--field);color:#fff;transition:.15s;letter-spacing:.01em
+  }
+  .btn:hover{background:var(--field-deep)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .btn.ghost:hover{background:#f0f2ec}
+  .btn.small{padding:8px 14px;font-size:13px}
+  .btn.danger{background:#fff;color:var(--red-deep);border:1px solid #f0c9c9}
+  .btn.danger:hover{background:#fdeaea}
+
+  .hint{font-size:13px;color:var(--ink-soft);margin:10px 0 0}
+  .err{color:var(--red-deep);font-weight:600}
+
+  /* ---------- TABELLE ---------- */
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:11px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);font-weight:700}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:0}
+  .rank{font-family:"Anton",sans-serif;font-size:18px;color:var(--ink-soft);width:34px}
+  .rank.top1{color:#caa024} .rank.top2{color:#9aa3a8} .rank.top3{color:#b07a3c}
+  .name{font-weight:600}
+  .tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    background:#fff3df;color:#9a6a16;border:1px solid #f0dcb4;border-radius:6px;padding:2px 6px;margin-left:8px;vertical-align:middle}
+  .elo{font-family:"Anton",sans-serif;font-size:18px;font-variant-numeric:tabular-nums}
+  .wl .w{color:var(--field-deep);font-weight:700}
+  .wl .l{color:var(--red-deep);font-weight:700}
+
+  /* barra affiatamento divergente */
+  .aff{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+  .aff-val{font-weight:700;font-variant-numeric:tabular-nums;min-width:46px;text-align:right}
+  .aff-bar{position:relative;width:90px;height:8px;background:#eceee7;border-radius:99px;flex:0 0 auto}
+  .aff-mid{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:#c7ccc0}
+  .aff-fill{position:absolute;top:0;bottom:0;border-radius:99px}
+  .aff-fill.pos{left:50%;background:var(--field)}
+  .aff-fill.neg{right:50%;background:var(--red)}
+
+  /* ---------- GIOCATORI ---------- */
+  .add-row{display:flex;gap:10px;margin-bottom:16px}
+  input.text{flex:1;font-family:inherit;font-size:15px;border:1px solid var(--line);border-radius:11px;padding:12px 14px;color:var(--ink)}
+  input.text:focus{outline:2px solid var(--field);outline-offset:1px}
+  input.file-input{font-family:inherit;font-size:14px;color:var(--ink-soft);border:1px dashed var(--line);border-radius:10px;padding:10px 12px;background:#fbfcf9;cursor:pointer;width:100%}
+  input.file-input::file-selector-button{font-family:inherit;font-weight:700;font-size:13px;border:0;border-radius:8px;padding:8px 14px;margin-right:12px;background:var(--field);color:#fff;cursor:pointer}
+  textarea.text{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:11px;padding:12px 14px;color:var(--ink);resize:vertical}
+  textarea.text:focus{outline:2px solid var(--field);outline-offset:1px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5}
+  .plist{display:flex;flex-direction:column;gap:8px}
+  .prow{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:11px;padding:10px 12px}
+  .prow .pn{flex:1;font-weight:600}
+  .prow .pmeta{font-size:13px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+  .icon-btn{border:1px solid var(--line);background:#fff;border-radius:9px;width:34px;height:34px;cursor:pointer;color:var(--ink-soft);font-size:15px}
+  .icon-btn:hover{background:#f0f2ec;color:var(--ink)}
+  .icon-btn.del:hover{background:#fdeaea;color:var(--red-deep);border-color:#f0c9c9}
+
+  /* ---------- STORICO ---------- */
+  .mrow{display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .mrow + .mrow{margin-top:8px}
+  .mdate{font-size:12px;color:var(--ink-soft);font-variant-numeric:tabular-nums;width:74px}
+  .mteams{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:14px}
+  .pill{font-weight:600;padding:2px 8px;border-radius:7px;font-size:13px}
+  .pill.red{background:#fdecec;color:var(--red-deep)}
+  .pill.blue{background:#e9f1fb;color:var(--blue-deep)}
+  .mscore{font-family:"Anton",sans-serif;font-size:20px;font-variant-numeric:tabular-nums}
+  .mscore .win{color:var(--field-deep)}
+
+  /* ---------- EMPTY ---------- */
+  .empty{text-align:center;padding:34px 16px;color:var(--ink-soft)}
+  .empty .big{font-family:"Anton",sans-serif;font-size:20px;color:var(--ink);margin-bottom:6px}
+
+  /* ---------- INFO ---------- */
+  details.info{margin-top:16px;border:1px dashed var(--line);border-radius:12px;padding:0 16px}
+  details.info summary{cursor:pointer;font-weight:600;padding:14px 0;list-style:none}
+  details.info summary::-webkit-details-marker{display:none}
+  details.info summary::before{content:"＋ ";color:var(--field);font-weight:700}
+  details.info[open] summary::before{content:"− "}
+  details.info .ibody{padding:0 0 16px;font-size:14px;color:var(--ink-soft)}
+  details.info .ibody strong{color:var(--ink)}
+  details.info code{background:#eef1ea;padding:1px 6px;border-radius:5px;font-size:13px}
+
+  /* ---------- TOAST ---------- */
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:#fff;padding:13px 20px;border-radius:12px;font-weight:600;
+    box-shadow:0 16px 40px -12px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:.25s;z-index:50}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* ---------- MODALE (sostituisce confirm/prompt nativi) ---------- */
+  .modal-overlay{position:fixed;inset:0;background:rgba(16,24,18,.5);display:none;align-items:center;justify-content:center;padding:20px;z-index:100}
+  .modal-overlay.show{display:flex}
+  .modal-box{background:var(--card);border-radius:16px;box-shadow:0 24px 60px -20px rgba(0,0,0,.6);max-width:420px;width:100%;padding:22px}
+  .modal-msg{margin:0 0 14px;font-size:15px;color:var(--ink);white-space:pre-line}
+  .modal-input{width:100%;box-sizing:border-box;margin:0 0 14px}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end}
+
+  .storage-warn{background:#fff7e6;border:1px solid #f3dca0;color:#8a6300;font-size:13px;border-radius:10px;padding:10px 14px;margin:16px 0 0}
+
+  /* ---------- DATI / BACKUP ---------- */
+  .data-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:4px}
+  .data-box{border:1px solid var(--line);border-radius:13px;padding:16px;display:flex;flex-direction:column}
+  .data-box h3{margin:0 0 6px;font-family:"Anton",sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.03em;font-size:15px}
+  .data-box p{font-size:14px;color:var(--ink-soft);margin:0 0 14px;flex:1}
+  .save-note{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--field-deep);font-weight:600;margin:0 0 16px}
+  .save-note .dot{width:9px;height:9px;border-radius:50%;background:var(--field);box-shadow:0 0 0 3px rgba(28,128,73,.18)}
+  pre.code-block{background:#0f1a13;color:#dfe9e0;border-radius:10px;padding:14px;overflow-x:auto;font-size:12.5px;line-height:1.55;margin:10px 0 0}
+
+  @media(max-width:640px){
+    .data-grid{grid-template-columns:1fr}
+    .match{grid-template-columns:1fr;gap:12px}
+    .scoreboard{flex-direction:row;justify-content:center;gap:18px}
+    .hero-inner{padding:24px 18px}
+    .mrow{grid-template-columns:1fr auto;row-gap:8px}
+    .mrow .mdate{grid-column:1/-1}
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <svg class="hero-svg" viewBox="0 0 800 260" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g fill="none" stroke="var(--field-line)" stroke-width="3" opacity="0.7">
+        <rect x="20" y="20" width="760" height="220" rx="6"/>
+        <line x1="400" y1="20" x2="400" y2="240"/>
+        <circle cx="400" cy="130" r="46"/>
+        <circle cx="400" cy="130" r="4" fill="var(--field-line)" stroke="none"/>
+        <rect x="20" y="74" width="78" height="112"/>
+        <rect x="702" y="74" width="78" height="112"/>
+        <rect x="20" y="104" width="34" height="52"/>
+        <rect x="746" y="104" width="34" height="52"/>
+      </g>
+    </svg>
+    <div class="hero-inner">
+      <p class="eyebrow">Calcetto balilla · pausa pranzo</p>
+      <h1>La Classifica<br>dell'Ufficio</h1>
+      <p class="hero-sub">Squadre miste a ogni partita. Registra il risultato e lascia che le classifiche — individuale e di coppia — si calcolino da sole.</p>
+      <div class="season-bar">
+        <label for="season">Stagione</label>
+        <select id="season" class="season"></select>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-view="play" aria-selected="true">Nuova partita</button>
+    <button class="tab" role="tab" data-view="solo" aria-selected="false">Classifica</button>
+    <button class="tab" role="tab" data-view="pairs" aria-selected="false">Coppie</button>
+    <button class="tab" role="tab" data-view="players" aria-selected="false">Giocatori</button>
+    <button class="tab" role="tab" data-view="history" aria-selected="false">Storico</button>
+    <button class="tab" role="tab" data-view="data" aria-selected="false">Dati</button>
+  </nav>
+
+  <main id="views"></main>
+
+  <div id="storageWarn" class="storage-warn" style="display:none">
+    Attenzione: qui il salvataggio permanente non è disponibile, quindi i dati restano solo finché tieni aperta la pagina. Scarica un backup dalla scheda <strong>Dati</strong> per non perderli.
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<div id="modal" class="modal-overlay" aria-hidden="true">
+  <div class="modal-box" role="dialog" aria-modal="true">
+    <p class="modal-msg"></p>
+    <input class="text modal-input" type="text" style="display:none">
+    <div class="modal-actions">
+      <button class="btn ghost" id="modalCancel">Annulla</button>
+      <button class="btn" id="modalOk">Conferma</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   STORAGE (persistente via window.storage, fallback memoria)
+   ========================================================= */
+const KEY = "calcetto:data";
+let memFallback = null;
+let persistOK = true;
+
+const hasClaudeStorage = () => (typeof window!=="undefined" && window.storage && typeof window.storage.get==="function");
+function showWarn(){ const el=document.getElementById("storageWarn"); if(el) el.style.display="block"; }
+function hideWarn(){ const el=document.getElementById("storageWarn"); if(el) el.style.display="none"; }
+
+async function loadData(){
+  // 1) Storage interno di Claude (anteprima / artifact pubblicato)
+  if(hasClaudeStorage()){
+    persistOK = true; // se esiste, anche la scrittura funzionerà
+    try{
+      const r = await window.storage.get(KEY);
+      return r && r.value ? JSON.parse(r.value) : {players:[],matches:[]};
+    }catch(e){ return {players:[],matches:[]}; } // chiave assente: normale
+  }
+  // 2) localStorage (Google Sites, hosting proprio, file locale)
+  try{
+    const raw = localStorage.getItem(KEY);
+    persistOK = true;
+    return raw ? JSON.parse(raw) : {players:[],matches:[]};
+  }catch(e){ persistOK = false; }
+  // 3) solo memoria (ultima spiaggia)
+  return memFallback || {players:[],matches:[]};
+}
+async function saveData(){
+  memFallback = state;
+  const payload = JSON.stringify(state);
+  if(hasClaudeStorage()){
+    try{
+      const r = await window.storage.set(KEY, payload);
+      if(r){ persistOK=true; hideWarn(); return; }
+    }catch(e){}
+  }
+  try{
+    localStorage.setItem(KEY, payload);
+    persistOK=true; hideWarn(); return;
+  }catch(e){}
+  persistOK=false; showWarn();
+}
+
+/* =========================================================
+   STATO + UTILITY
+   ========================================================= */
+let state = {players:[],matches:[]};
+let view = "play";
+let season = "all"; // "all" oppure "YYYY-MM"
+let showProvisional = false; // provvisori nascosti di default
+const K = 28;            // sensibilità Elo
+const DEFAULT_MIN_SOLO = 5;   // soglia predefinita per il singolo
+const DEFAULT_MIN_PAIR = 3;   // soglia predefinita per la coppia
+const minSolo = () => state.settings?.minSolo ?? DEFAULT_MIN_SOLO;
+const minPair = () => state.settings?.minPair ?? DEFAULT_MIN_PAIR;
+
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "id"+Math.random().toString(36).slice(2)+Date.now());
+const byId = id => state.players.find(p=>p.id===id);
+const nameOf = id => { const p=byId(id); return p?p.name:"—"; };
+const esc = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const monthKey = d => (d||"").slice(0,7);
+const monthLabel = ym => {
+  const [y,m] = ym.split("-");
+  const mesi = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
+  return `${mesi[(+m)-1]} ${y}`;
+};
+
+function filteredMatches(){
+  const ms = state.matches.filter(m => season==="all" ? true : monthKey(m.date)===season);
+  return ms.slice().sort((a,b)=> (a.date===b.date ? a.ts-b.ts : a.date.localeCompare(b.date)));
+}
+
+/* =========================================================
+   MOTORE DELLE CLASSIFICHE (ricalcolo da zero ogni volta)
+   ========================================================= */
+function compute(){
+  const ms = filteredMatches();
+  const rating = {};   // id -> elo
+  const ps = {};       // id -> stats singolo
+  const pairs = {};    // "id1|id2" -> stats coppia
+  const R = id => (rating[id] ?? (rating[id]=1000, 1000));
+  const P = id => ps[id] || (ps[id]={id, g:0,w:0,l:0,gf:0,ga:0});
+  const pairKey = (x,y) => [x,y].sort().join("|");
+  const PR = (x,y) => { const k=pairKey(x,y); return pairs[k] || (pairs[k]={a:x<y?x:y,b:x<y?y:x,g:0,w:0,l:0,affSum:0}); };
+
+  for(const m of ms){
+    const [a1,a2]=m.a, [b1,b2]=m.b;
+    const avgA=(R(a1)+R(a2))/2, avgB=(R(b1)+R(b2))/2;
+    const eA=1/(1+Math.pow(10,(avgB-avgA)/400)), eB=1-eA;
+    let sA;
+    if(m.sa>m.sb) sA=1; else if(m.sa<m.sb) sA=0; else sA=0.5;
+    const sB=1-sA;
+
+    // Elo
+    rating[a1]=R(a1)+K*(sA-eA);
+    rating[a2]=R(a2)+K*(sA-eA);
+    rating[b1]=R(b1)+K*(sB-eB);
+    rating[b2]=R(b2)+K*(sB-eB);
+
+    // stat singolo
+    for(const id of [a1,a2]){const s=P(id);s.g++;s.gf+=m.sa;s.ga+=m.sb;sA>0.5?s.w++:(sA<0.5?s.l++:0);}
+    for(const id of [b1,b2]){const s=P(id);s.g++;s.gf+=m.sb;s.ga+=m.sa;sB>0.5?s.w++:(sB<0.5?s.l++:0);}
+
+    // stat coppia + affiatamento (resa reale meno resa attesa dai rating)
+    const prA=PR(a1,a2); prA.g++; sA>0.5?prA.w++:(sA<0.5?prA.l++:0); prA.affSum+=(sA-eA);
+    const prB=PR(b1,b2); prB.g++; sB>0.5?prB.w++:(sB<0.5?prB.l++:0); prB.affSum+=(sB-eB);
+  }
+
+  const solo = Object.values(ps).map(s=>({
+    ...s,
+    elo: Math.round(rating[s.id]),
+    pct: s.g? s.w/s.g : 0,
+    diff: s.gf-s.ga
+  })).sort((x,y)=> y.elo-x.elo || y.pct-x.pct || y.diff-x.diff);
+
+  const pair = Object.values(pairs).map(p=>({
+    ...p,
+    pct: p.g? p.w/p.g : 0,
+    aff: p.g? Math.round((p.affSum/p.g)*100) : 0
+  })).sort((x,y)=> y.aff-x.aff || y.pct-x.pct || y.g-x.g);
+
+  return {solo, pair, count: ms.length};
+}
+
+/* =========================================================
+   RENDER
+   ========================================================= */
+const views = document.getElementById("views");
+
+// stato form nuova partita
+let mform = {a1:"",a2:"",b1:"",b2:"",sa:0,sb:0,date:new Date().toISOString().slice(0,10)};
+
+function render(){
+  document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-selected", t.dataset.view===view));
+  if(view==="play") return renderPlay();
+  if(view==="solo") return renderSolo();
+  if(view==="pairs") return renderPairs();
+  if(view==="players") return renderPlayers();
+  if(view==="history") return renderHistory();
+  if(view==="data") return renderData();
+}
+
+function playerOptions(selected, exclude){
+  const opts = ['<option value="">— scegli —</option>'];
+  for(const p of state.players){
+    if(exclude.includes(p.id) && p.id!==selected) continue;
+    opts.push(`<option value="${p.id}" ${p.id===selected?"selected":""}>${esc(p.name)}</option>`);
+  }
+  return opts.join("");
+}
+
+function renderPlay(){
+  if(state.players.length<4){
+    views.innerHTML = `<section class="card"><div class="empty">
+      <div class="big">Servono almeno 4 giocatori</div>
+      <p>Aggiungi i colleghi dalla scheda <strong>Giocatori</strong> per registrare la prima partita.</p>
+      <button class="btn" onclick="go('players')">Vai a Giocatori</button>
+    </div></section>`;
+    return;
+  }
+  const exclude = [mform.a1,mform.a2,mform.b1,mform.b2].filter(Boolean);
+  views.innerHTML = `
+  <section class="card">
+    <h2>Nuova partita</h2>
+    <p class="muted">Scegli i due della squadra rossa e i due della blu, poi segna il punteggio.</p>
+    <div class="match">
+      <div class="team red">
+        <h3>Squadra Rossa</h3>
+        <div class="pick">
+          <select class="player" data-slot="a1">${playerOptions(mform.a1,exclude)}</select>
+          <select class="player" data-slot="a2">${playerOptions(mform.a2,exclude)}</select>
+        </div>
+        <div class="counter">
+          <div class="num" id="numA">${mform.sa}</div>
+          <div class="stepper"><button data-d="sa" data-v="-1">−</button><button data-d="sa" data-v="1">+</button></div>
+        </div>
+      </div>
+      <div class="scoreboard"><span class="vs">VS</span></div>
+      <div class="team blue">
+        <h3>Squadra Blu</h3>
+        <div class="pick">
+          <select class="player" data-slot="b1">${playerOptions(mform.b1,exclude)}</select>
+          <select class="player" data-slot="b2">${playerOptions(mform.b2,exclude)}</select>
+        </div>
+        <div class="counter">
+          <div class="num" id="numB">${mform.sb}</div>
+          <div class="stepper"><button data-d="sb" data-v="-1">−</button><button data-d="sb" data-v="1">+</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="match-foot">
+      <div class="date-field"><span>Data</span><input type="date" id="mdate" value="${mform.date}"></div>
+      <button class="btn" id="saveMatch">Salva partita</button>
+    </div>
+    <p class="hint" id="mhint"></p>
+  </section>`;
+
+  views.querySelectorAll("select.player").forEach(sel=>{
+    sel.addEventListener("change", e=>{ mform[e.target.dataset.slot]=e.target.value; renderPlay(); });
+  });
+  views.querySelectorAll(".stepper button").forEach(b=>{
+    b.addEventListener("click", ()=>{
+      const d=b.dataset.d; mform[d]=Math.max(0, mform[d]+(+b.dataset.v));
+      document.getElementById(d==="sa"?"numA":"numB").textContent=mform[d];
+    });
+  });
+  document.getElementById("mdate").addEventListener("change", e=>{ mform.date=e.target.value; });
+  document.getElementById("saveMatch").addEventListener("click", saveMatch);
+}
+
+function saveMatch(){
+  const hint = document.getElementById("mhint");
+  const ids=[mform.a1,mform.a2,mform.b1,mform.b2];
+  if(ids.some(x=>!x)){ hint.innerHTML='<span class="err">Seleziona tutti e quattro i giocatori.</span>'; return; }
+  if(new Set(ids).size!==4){ hint.innerHTML='<span class="err">Un giocatore non può stare in due posti.</span>'; return; }
+  if(mform.sa===mform.sb){ hint.innerHTML='<span class="err">Il punteggio non può finire in parità nel calcetto — segna chi ha vinto.</span>'; return; }
+  state.matches.push({id:uid(), date:mform.date||new Date().toISOString().slice(0,10), a:[mform.a1,mform.a2], b:[mform.b1,mform.b2], sa:mform.sa, sb:mform.sb, ts:Date.now()});
+  saveData();
+  const winner = mform.sa>mform.sb ? "Rossa" : "Blu";
+  mform = {a1:"",a2:"",b1:"",b2:"",sa:0,sb:0,date:mform.date};
+  rebuildSeasons();
+  toast(`Partita salvata · vince la ${winner} 🏆`);
+  renderPlay();
+}
+
+function renderSolo(){
+  const {solo, count} = compute();
+  if(!solo.length){ return emptyState("Ancora nessuna partita in questa stagione","Registra qualche match e qui comparirà la classifica individuale con i punti Elo."); }
+  const M = minSolo();
+  const provList = solo.filter(s=>s.g<M);
+  const shown = showProvisional ? solo : solo.filter(s=>s.g>=M);
+  const note = `${count} partite · ordinata per punteggio Elo`
+    + (provList.length && !showProvisional ? ` · ${provList.length} esclusi con meno di ${M} partite` : "");
+  const rows = shown.map((s,i)=>{
+    const rk = i<3 ? `top${i+1}` : "";
+    const prov = s.g<M ? '<span class="tag">provvisorio</span>' : "";
+    const diff = (s.diff>0?"+":"")+s.diff;
+    return `<tr>
+      <td class="rank ${rk}">${i+1}</td>
+      <td class="name">${esc(nameOf(s.id))}${prov}</td>
+      <td class="num"><span class="elo">${s.elo}</span></td>
+      <td class="num wl"><span class="w">${s.w}</span>–<span class="l">${s.l}</span></td>
+      <td class="num">${Math.round(s.pct*100)}%</td>
+      <td class="num">${diff}</td>
+    </tr>`;
+  }).join("");
+  views.innerHTML = `
+  <section class="card">
+    <div class="card-head">
+      <h2>Classifica individuale</h2>
+      <div class="head-tools">
+        ${minControl("solo")}
+        ${provToggleBtn(provList.length)}
+      </div>
+    </div>
+    <p class="muted">${note}.</p>
+    ${ shown.length
+      ? `<div class="table-scroll"><table>
+      <thead><tr><th class="rank">#</th><th>Giocatore</th><th class="num">Elo</th><th class="num">V–S</th><th class="num">% Vitt.</th><th class="num">Diff</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`
+      : `<div class="empty"><div class="big">Nessuno ha ancora abbastanza partite</div><p>Servono almeno ${M} partite per entrare in classifica. Abbassa la soglia qui sopra o mostra i provvisori.</p></div>` }
+    ${infoBox()}
+  </section>`;
+  wireMinControl();
+  wireProvToggle();
+}
+
+function renderPairs(){
+  const {pair} = compute();
+  if(!pair.length){ return emptyState("Nessuna coppia ancora","Quando due persone giocano insieme, qui vedrai quanto rendono in coppia."); }
+  const M = minPair();
+  const provList = pair.filter(p=>p.g<M);
+  const shown = showProvisional ? pair : pair.filter(p=>p.g>=M);
+  const note = `Ordinata per <strong>affiatamento</strong>: quanto la coppia rende oltre la somma dei valori individuali`
+    + (provList.length && !showProvisional ? ` · ${provList.length} escluse con meno di ${M} partite` : "");
+  const rows = shown.map((p,i)=>{
+    const prov = p.g<M ? '<span class="tag">poche partite</span>' : "";
+    const mag = Math.min(50, Math.abs(p.aff)); // half-width max 50%
+    const bar = p.aff>=0
+      ? `<div class="aff-fill pos" style="width:${mag}%"></div>`
+      : `<div class="aff-fill neg" style="width:${mag}%"></div>`;
+    const sign = (p.aff>0?"+":"")+p.aff;
+    return `<tr>
+      <td class="rank">${i+1}</td>
+      <td class="name">${esc(nameOf(p.a))} <span style="color:var(--ink-soft);font-weight:400">+</span> ${esc(nameOf(p.b))}${prov}</td>
+      <td class="num">${p.g}</td>
+      <td class="num wl"><span class="w">${p.w}</span>–<span class="l">${p.l}</span></td>
+      <td class="num">${Math.round(p.pct*100)}%</td>
+      <td>
+        <div class="aff">
+          <span class="aff-val" style="color:${p.aff>=0?'var(--field-deep)':'var(--red-deep)'}">${sign}</span>
+          <div class="aff-bar"><div class="aff-mid"></div>${bar}</div>
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
+  views.innerHTML = `
+  <section class="card">
+    <div class="card-head">
+      <h2>Classifica di coppia</h2>
+      <div class="head-tools">
+        ${minControl("pair")}
+        ${provToggleBtn(provList.length)}
+      </div>
+    </div>
+    <p class="muted">${note}.</p>
+    ${ shown.length
+      ? `<div class="table-scroll"><table>
+      <thead><tr><th class="rank">#</th><th>Coppia</th><th class="num">G</th><th class="num">V–S</th><th class="num">% Vitt.</th><th class="num">Affiatamento</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`
+      : `<div class="empty"><div class="big">Nessuna coppia con abbastanza partite</div><p>Servono almeno ${M} partite insieme. Abbassa la soglia qui sopra o mostra le coppie provvisorie.</p></div>` }
+    ${infoBox()}
+  </section>`;
+  wireMinControl();
+  wireProvToggle();
+}
+
+function renderPlayers(){
+  const {solo} = compute();
+  const statById = Object.fromEntries(solo.map(s=>[s.id,s]));
+  const list = state.players.length
+    ? state.players.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>{
+        const st = statById[p.id];
+        const meta = st ? `${st.g} partite · Elo ${st.elo}` : "nessuna partita";
+        return `<div class="prow" data-id="${p.id}">
+          <span class="pn">${esc(p.name)}</span>
+          <span class="pmeta">${meta}</span>
+          <button class="icon-btn ren" title="Rinomina">✎</button>
+          <button class="icon-btn del" title="Elimina">🗑</button>
+        </div>`;
+      }).join("")
+    : `<div class="empty"><div class="big">Nessun giocatore</div><p>Aggiungi il primo collega qui sotto.</p></div>`;
+  views.innerHTML = `
+  <section class="card">
+    <h2>Giocatori</h2>
+    <p class="muted">Aggiungi chi gioca a pranzo. Le statistiche sono riferite alla stagione selezionata.</p>
+    <div class="add-row">
+      <input class="text" id="newName" placeholder="Nome del giocatore" maxlength="24">
+      <button class="btn" id="addPlayer">Aggiungi</button>
+    </div>
+    <div class="plist">${list}</div>
+  </section>`;
+
+  const input = document.getElementById("newName");
+  const add = ()=>{
+    const n=(input.value||"").trim();
+    if(!n) return;
+    if(state.players.some(p=>p.name.toLowerCase()===n.toLowerCase())){ toast("Esiste già un giocatore con questo nome"); return; }
+    state.players.push({id:uid(), name:n}); saveData(); input.value=""; renderPlayers();
+  };
+  document.getElementById("addPlayer").addEventListener("click", add);
+  input.addEventListener("keydown", e=>{ if(e.key==="Enter") add(); });
+  input.focus();
+
+  views.querySelectorAll(".prow").forEach(row=>{
+    const id=row.dataset.id;
+    row.querySelector(".ren").addEventListener("click", async ()=>{
+      const cur=byId(id); const nn=await promptDialog("Nuovo nome:", cur.name);
+      if(nn && nn.trim()){ cur.name=nn.trim(); saveData(); renderPlayers(); }
+    });
+    row.querySelector(".del").addEventListener("click", async ()=>{
+      const used = state.matches.some(m=>[...m.a,...m.b].includes(id));
+      const msg = used ? "Questo giocatore ha già delle partite registrate: eliminandolo verranno rimosse anche quelle. Procedere?" : "Eliminare questo giocatore?";
+      if(await confirmDialog(msg, "Elimina")){
+        state.players = state.players.filter(p=>p.id!==id);
+        state.matches = state.matches.filter(m=>![...m.a,...m.b].includes(id));
+        saveData(); rebuildSeasons(); renderPlayers();
+      }
+    });
+  });
+}
+
+function renderHistory(){
+  const ms = filteredMatches().slice().reverse();
+  if(!ms.length){ return emptyState("Storico vuoto","Le partite registrate compariranno qui, dalla più recente."); }
+  const rows = ms.map(m=>{
+    const aWin=m.sa>m.sb;
+    return `<div class="mrow" data-id="${m.id}">
+      <span class="mdate">${m.date}</span>
+      <div class="mteams">
+        <span class="pill red">${esc(nameOf(m.a[0]))} · ${esc(nameOf(m.a[1]))}</span>
+        <span style="color:var(--ink-soft)">vs</span>
+        <span class="pill blue">${esc(nameOf(m.b[0]))} · ${esc(nameOf(m.b[1]))}</span>
+      </div>
+      <span class="mscore"><span class="${aWin?'win':''}">${m.sa}</span>–<span class="${!aWin?'win':''}">${m.sb}</span></span>
+      <button class="btn danger small del">Elimina</button>
+    </div>`;
+  }).join("");
+  views.innerHTML = `
+  <section class="card">
+    <h2>Storico partite</h2>
+    <p class="muted">${ms.length} partite${season==="all"?"":" in questa stagione"}.</p>
+    ${rows}
+  </section>`;
+  views.querySelectorAll(".mrow .del").forEach(b=>{
+    b.addEventListener("click", async ()=>{
+      const id=b.closest(".mrow").dataset.id;
+      if(await confirmDialog("Eliminare questa partita? Le classifiche verranno ricalcolate.", "Elimina")){
+        state.matches=state.matches.filter(m=>m.id!==id); saveData(); rebuildSeasons(); renderHistory();
+      }
+    });
+  });
+}
+
+function emptyState(big, sub){
+  views.innerHTML = `<section class="card"><div class="empty"><div class="big">${big}</div><p>${sub}</p></div></section>`;
+}
+
+function provToggleBtn(nProv){
+  if(!nProv) return "";
+  return showProvisional
+    ? `<button class="btn ghost small" id="toggleProv">Nascondi provvisori</button>`
+    : `<button class="btn ghost small" id="toggleProv">Mostra provvisori (${nProv})</button>`;
+}
+function wireProvToggle(){
+  const tb = document.getElementById("toggleProv");
+  if(tb) tb.addEventListener("click", ()=>{ showProvisional=!showProvisional; render(); });
+}
+
+function minControl(kind){
+  const val = kind==="solo" ? minSolo() : minPair();
+  return `<div class="minctl" data-kind="${kind}" title="Partite minime per entrare in classifica">
+    <span>Min. partite</span>
+    <div class="stepper mini">
+      <button data-mg="dec" aria-label="Riduci soglia">−</button>
+      <span class="mgval">${val}</span>
+      <button data-mg="inc" aria-label="Aumenta soglia">+</button>
+    </div>
+  </div>`;
+}
+function wireMinControl(){
+  const box = document.querySelector(".minctl");
+  if(!box) return;
+  const kind = box.dataset.kind;
+  box.querySelectorAll("button[data-mg]").forEach(b=>{
+    b.addEventListener("click", ()=>{
+      const cur = kind==="solo" ? minSolo() : minPair();
+      const next = Math.max(1, Math.min(50, cur + (b.dataset.mg==="inc"?1:-1)));
+      if(!state.settings) state.settings = {minSolo:DEFAULT_MIN_SOLO, minPair:DEFAULT_MIN_PAIR};
+      if(kind==="solo") state.settings.minSolo = next; else state.settings.minPair = next;
+      saveData();
+      render();
+    });
+  });
+}
+
+function infoBox(){
+  return `<details class="info"><summary>Come funziona il punteggio</summary><div class="ibody">
+    <p><strong>Elo individuale.</strong> Ognuno parte da <code>1000</code>. Ad ogni partita si confronta la forza media della tua squadra con quella avversaria: battere coppie più forti fa guadagnare di più, vincere contro chi è più debole quasi nulla. Con le squadre miste è il dato più affidabile, perché si "pulisce" da solo partita dopo partita.</p>
+    <p><strong>Affiatamento di coppia.</strong> Misura quanto una coppia rende <em>oltre</em> ciò che ci si aspetterebbe dai valori dei due singoli. Un valore positivo (verde) significa intesa sopra le attese; negativo (rosso) sotto. Premia le coppie ben assortite, non solo "due forti messi insieme".</p>
+    <p>Chi ha ancora poche partite resta <strong>fuori dalla classifica</strong>: col pulsante <em>Mostra provvisori</em> lo vedi comunque, segnato con l'etichetta <span class="tag">provvisorio</span>. Cambiando <strong>stagione</strong> in alto, ogni periodo riparte da capo.</p>
+  </div></details>`;
+}
+
+/* =========================================================
+   DATI: backup ed esportazione/importazione JSON
+   ========================================================= */
+function buildExport(){
+  return { app:"calcetto-balilla", version:1, exportedAt:new Date().toISOString(),
+           settings:{minSolo:minSolo(), minPair:minPair()},
+           players:state.players, matches:state.matches };
+}
+
+function exportJSON(){
+  const data = JSON.stringify(buildExport(), null, 2);
+  const blob = new Blob([data], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `calcetto-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  toast("Backup scaricato");
+}
+
+async function parseAndApply(text){
+  let obj;
+  try{ obj = JSON.parse(text); }
+  catch(e){ toast("Testo non valido: non è in formato JSON"); return; }
+  try{
+    const players = Array.isArray(obj.players) ? obj.players : null;
+    const matches = Array.isArray(obj.matches) ? obj.matches : null;
+    if(!players || !matches) throw new Error("non è un backup del calcetto");
+    const okP = players.every(p=>p && p.id && typeof p.name==="string");
+    const okM = matches.every(m=>m && m.id && Array.isArray(m.a)&&m.a.length===2 &&
+                Array.isArray(m.b)&&m.b.length===2 && m.date &&
+                Number.isFinite(+m.sa) && Number.isFinite(+m.sb));
+    if(!okP || !okM) throw new Error("dati incompleti o nel formato sbagliato");
+    if(!(await confirmDialog(`Importare ${players.length} giocatori e ${matches.length} partite?\nI dati attualmente presenti verranno sostituiti.`, "Importa"))) return;
+    state = {
+      players: players.map(p=>({id:String(p.id), name:String(p.name)})),
+      matches: matches.map(m=>({id:String(m.id), date:m.date, a:[String(m.a[0]),String(m.a[1])],
+                b:[String(m.b[0]),String(m.b[1])], sa:+m.sa, sb:+m.sb, ts:m.ts||Date.now()})),
+      settings: {
+        minSolo: Number.isFinite(+obj.settings?.minSolo) ? Math.max(1,Math.min(50,+obj.settings.minSolo)) : DEFAULT_MIN_SOLO,
+        minPair: Number.isFinite(+obj.settings?.minPair) ? Math.max(1,Math.min(50,+obj.settings.minPair)) : DEFAULT_MIN_PAIR
+      }
+    };
+    saveData();
+    season="all"; rebuildSeasons();
+    const ssel=document.getElementById("season"); if(ssel) ssel.value="all";
+    toast("Dati importati");
+    view="solo"; render();
+  }catch(e){
+    toast("Backup non valido: "+e.message);
+  }
+}
+function importJSON(file){
+  const reader = new FileReader();
+  reader.onload = ()=> parseAndApply(reader.result);
+  reader.onerror = ()=> toast("Impossibile leggere il file");
+  reader.readAsText(file);
+}
+function importText(text){ parseAndApply(text); }
+
+function renderData(){
+  const json = JSON.stringify(buildExport());
+  const sizeKb = (new Blob([json]).size/1024).toFixed(1);
+  const example =
+`{
+  "app": "calcetto-balilla",
+  "version": 1,
+  "exportedAt": "2026-06-17T12:00:00.000Z",
+  "players": [
+    { "id": "p1", "name": "Luca" },
+    { "id": "p2", "name": "Sara" }
+  ],
+  "matches": [
+    {
+      "id": "m1",
+      "date": "2026-06-17",
+      "a": ["p1", "p2"],
+      "b": ["p3", "p4"],
+      "sa": 10,
+      "sb": 7,
+      "ts": 1718620800000
+    }
+  ]
+}`;
+  views.innerHTML = `
+  <section class="card">
+    <h2>Dati e backup</h2>
+    <p class="save-note"><span class="dot"></span> Salvataggio automatico attivo: ogni partita resta memorizzata su questo dispositivo.</p>
+    <p class="muted">Qui puoi scaricare una copia completa in JSON da conservare o spostare su un altro dispositivo, e ripristinarla quando vuoi.</p>
+    <div class="data-grid">
+      <div class="data-box">
+        <h3>Esporta</h3>
+        <p>Scarica un file <code>.json</code> con tutti i giocatori e le partite — ${state.players.length} giocatori, ${state.matches.length} partite, ${sizeKb} KB.</p>
+        <button class="btn" id="btnExport">Scarica backup JSON</button>
+      </div>
+      <div class="data-box">
+        <h3>Importa da file</h3>
+        <p>Scegli un file di backup. <strong>Sostituirà</strong> i dati attuali, quindi conviene prima scaricarne una copia.</p>
+        <input type="file" id="fileImport" class="file-input" accept="application/json,.json">
+      </div>
+    </div>
+
+    <div class="data-box" style="margin-top:14px">
+      <h3>In alternativa: backup via testo</h3>
+      <p>Metodo a prova di blocco, utile quando la pagina è <strong>incorporata</strong> (es. Google Sites), dove il pulsante file può non aprire nulla. «Mostra / copia» riempie il riquadro con il backup attuale; per ripristinare, incollaci un backup e premi «Importa dal testo».</p>
+      <textarea id="jsonArea" class="text mono" rows="6" placeholder="Incolla qui il contenuto del file .json…"></textarea>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn ghost" id="btnFillArea">Mostra / copia backup</button>
+        <button class="btn" id="btnImportText">Importa dal testo</button>
+      </div>
+    </div>
+
+    <details class="info"><summary>Com'è fatto il file</summary><div class="ibody">
+      <p>Una struttura semplice e leggibile: l'elenco dei <code>players</code> (id + nome) e delle <code>matches</code> (data, le due squadre come coppie di id, e il punteggio <code>sa</code>–<code>sb</code>).</p>
+      <pre class="code-block">${esc(example)}</pre>
+    </div></details>
+  </section>`;
+
+  document.getElementById("btnExport").addEventListener("click", exportJSON);
+  const fileInput = document.getElementById("fileImport");
+  fileInput.addEventListener("change", e=>{
+    const f=e.target.files[0]; if(f) importJSON(f); e.target.value="";
+  });
+
+  const area = document.getElementById("jsonArea");
+  document.getElementById("btnFillArea").addEventListener("click", async ()=>{
+    const data = JSON.stringify(buildExport(), null, 2);
+    area.value = data; area.focus(); area.select();
+    try{ await navigator.clipboard.writeText(data); toast("Backup copiato negli appunti"); }
+    catch(e){ toast("Backup pronto: è selezionato, premi Ctrl/Cmd+C per copiarlo"); }
+  });
+  document.getElementById("btnImportText").addEventListener("click", ()=>{
+    const txt = area.value.trim();
+    if(!txt){ toast("Incolla prima un backup nel riquadro"); return; }
+    importText(txt);
+  });
+}
+
+/* =========================================================
+   STAGIONI + NAV + TOAST
+   ========================================================= */
+function rebuildSeasons(){
+  const sel = document.getElementById("season");
+  const set = new Set(state.matches.map(m=>monthKey(m.date)).filter(Boolean));
+  const months = [...set].sort().reverse();
+  const cur = season;
+  sel.innerHTML = `<option value="all">Tutte le stagioni</option>` +
+    months.map(ym=>`<option value="${ym}">${monthLabel(ym)}</option>`).join("");
+  sel.value = months.includes(cur)||cur==="all" ? cur : "all";
+  season = sel.value;
+}
+
+let toastTimer=null;
+function toast(msg){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),2200);
+}
+
+/* Modale interna: rimpiazza confirm()/prompt() nativi, bloccati negli iframe */
+let modalResolve=null;
+function openModal({message, okLabel, withInput, value}){
+  const ov=document.getElementById("modal");
+  ov.querySelector(".modal-msg").textContent=message;
+  const inp=ov.querySelector(".modal-input");
+  if(withInput){ inp.style.display="block"; inp.value=value||""; }
+  else { inp.style.display="none"; inp.value=""; }
+  ov.querySelector("#modalOk").textContent=okLabel||"Conferma";
+  ov.classList.add("show"); ov.setAttribute("aria-hidden","false");
+  if(withInput) setTimeout(()=>{ inp.focus(); inp.select(); },30);
+  return new Promise(res=>{ modalResolve=res; });
+}
+function closeModal(result){
+  const ov=document.getElementById("modal");
+  ov.classList.remove("show"); ov.setAttribute("aria-hidden","true");
+  const r=modalResolve; modalResolve=null;
+  if(r) r(result);
+}
+function confirmDialog(message, okLabel="Conferma"){
+  return openModal({message, okLabel, withInput:false}).then(r=>r!==null);
+}
+function promptDialog(message, value=""){
+  return openModal({message, okLabel:"Salva", withInput:true, value});
+}
+function wireModal(){
+  const ov=document.getElementById("modal");
+  const inp=ov.querySelector(".modal-input");
+  document.getElementById("modalOk").addEventListener("click", ()=>{
+    const withInput = inp.style.display!=="none";
+    closeModal(withInput ? inp.value.trim() : true);
+  });
+  document.getElementById("modalCancel").addEventListener("click", ()=>closeModal(null));
+  ov.addEventListener("click", e=>{ if(e.target===ov) closeModal(null); });
+  inp.addEventListener("keydown", e=>{
+    if(e.key==="Enter"){ e.preventDefault(); closeModal(inp.value.trim()); }
+    if(e.key==="Escape"){ closeModal(null); }
+  });
+}
+
+function go(v){ view=v; render(); }
+document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>go(t.dataset.view)));
+document.getElementById("season").addEventListener("change", e=>{ season=e.target.value; render(); });
+
+/* =========================================================
+   AVVIO
+   ========================================================= */
+(async function init(){
+  wireModal();
+  state = await loadData();
+  if(!state.players) state.players=[];
+  if(!state.matches) state.matches=[];
+  if(!state.settings) state.settings={minSolo:DEFAULT_MIN_SOLO, minPair:DEFAULT_MIN_PAIR};
+  if(!persistOK) document.getElementById("storageWarn").style.display="block";
+  rebuildSeasons();
+  render();
+})();
+</script>
