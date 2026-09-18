@@ -519,17 +519,25 @@ async function voteRemote(v){
   if(out && out.ok===false) throw new Error(out.error||"voto rifiutato");
   return true;
 }
+function persistLocal(){
+  memFallback = state;
+  try{
+    const p = JSON.stringify(state);
+    if(hasClaudeStorage()) window.storage.set(KEY, p);
+    else localStorage.setItem(KEY, p);
+  }catch(e){}
+}
 async function castVote(pid){
   if(!state.votes) state.votes=[];
   const v = { date:todayStr(), voterId:getVoterId(), pid:String(pid), ts:Date.now() };
   upsertVote(state.votes, v);
-  saveData();          // salvataggio locale (e push completo se sei un registratore)
+  persistLocal();      // salvataggio locale, SENZA toccare partite né Drive
   renderMvp();         // aggiornamento immediato
   if(syncUrl){
     try{
-      await voteRemote(v);                          // voto aperto, senza password
-      const cloud = await cloudPull();              // riallineo i voti degli altri
-      state = normalizeImport(cloud); renderMvp();
+      await voteRemote(v);               // il voto va allo sportello (aperto, senza password)
+      const cloud = await cloudPull();   // rileggo SOLO i voti aggiornati degli altri
+      if(cloud && Array.isArray(cloud.votes)){ state.votes = cloud.votes; renderMvp(); }
     }catch(e){ toast("Voto non inviato — riprova"); }
   }
 }
@@ -893,7 +901,7 @@ function renderMvp(){
   });
   document.getElementById("mvpRefresh").addEventListener("click", async ()=>{
     if(!syncUrl){ toast("Sincronizzazione non attiva"); return; }
-    try{ const cloud=await cloudPull(); state=normalizeImport(cloud); renderMvp(); toast("Voti aggiornati"); }
+    try{ const cloud=await cloudPull(); if(cloud && Array.isArray(cloud.votes)){ state.votes=cloud.votes; } renderMvp(); toast("Voti aggiornati"); }
     catch(e){ toast("Impossibile aggiornare i voti"); }
   });
 }
