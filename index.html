@@ -200,6 +200,24 @@
   .empty{text-align:center;padding:34px 16px;color:var(--ink-soft)}
   .empty .big{font-family:"Anton",sans-serif;font-size:20px;color:var(--ink);margin-bottom:6px}
 
+  /* ---------- MVP ---------- */
+  .vote-grid{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 4px}
+  .vote-chip{font-family:inherit;font-weight:600;font-size:15px;color:var(--ink);background:#fff;
+    border:1.5px solid var(--line);border-radius:999px;padding:10px 18px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px}
+  .vote-chip:hover{border-color:var(--field);background:#f1f8f3}
+  .vote-chip.mine{background:var(--field);border-color:var(--field);color:#fff}
+  .vote-chip .chk{font-weight:700}
+  .mvp-tally{margin-top:16px}
+  .mvp-tally-head{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);font-weight:700;margin-bottom:10px}
+  .mvp-empty{color:var(--ink-soft);font-size:14px;padding:6px 0}
+  .mvp-row{display:flex;align-items:center;gap:12px;margin:8px 0}
+  .mvp-name{flex:0 0 34%;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mvp-track{flex:1;height:14px;background:#eceee7;border-radius:99px;overflow:hidden}
+  .mvp-fill{height:100%;background:#c7d8cc;border-radius:99px;transition:width .3s}
+  .mvp-fill.lead{background:var(--field)}
+  .mvp-count{flex:0 0 auto;font-variant-numeric:tabular-nums;font-weight:700;min-width:22px;text-align:right}
+  .crown{font-family:"Anton",sans-serif;font-size:11px;letter-spacing:.04em;background:#f6e2a8;color:#8a6a16;border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+
   /* ---------- INFO ---------- */
   details.info{margin-top:16px;border:1px dashed var(--line);border-radius:12px;padding:0 16px}
   details.info summary{cursor:pointer;font-weight:600;padding:14px 0;list-style:none}
@@ -278,6 +296,7 @@
     <button class="tab" role="tab" data-view="play" aria-selected="true">Nuova partita</button>
     <button class="tab" role="tab" data-view="solo" aria-selected="false">Classifica</button>
     <button class="tab" role="tab" data-view="pairs" aria-selected="false">Coppie</button>
+    <button class="tab" role="tab" data-view="mvp" aria-selected="false">MVP</button>
     <button class="tab" role="tab" data-view="players" aria-selected="false">Giocatori</button>
     <button class="tab" role="tab" data-view="history" aria-selected="false">Storico</button>
     <button class="tab" role="tab" data-view="data" aria-selected="false">Dati</button>
@@ -473,7 +492,7 @@ function ghPushSoon(){
 /* =========================================================
    STATO + UTILITY
    ========================================================= */
-let state = {players:[],matches:[]};
+let state = {players:[],matches:[],votes:[]};
 let view = "play";
 let season = "all"; // "all" oppure "YYYY-MM"
 let showProvisional = false; // provvisori nascosti di default
@@ -482,6 +501,51 @@ const DEFAULT_MIN_SOLO = 5;   // soglia predefinita per il singolo
 const DEFAULT_MIN_PAIR = 3;   // soglia predefinita per la coppia
 const minSolo = () => state.settings?.minSolo ?? DEFAULT_MIN_SOLO;
 const minPair = () => state.settings?.minPair ?? DEFAULT_MIN_PAIR;
+
+// --- MVP: identità anonima del votante (un voto a testa al giorno, modificabile) ---
+function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+function getVoterId(){
+  try{ let id=localStorage.getItem("calcetto:voter"); if(!id){ id=uid(); localStorage.setItem("calcetto:voter",id); } return id; }
+  catch(e){ if(!window.__voter) window.__voter=uid(); return window.__voter; }
+}
+function upsertVote(arr, v){
+  const i = arr.findIndex(x=>x.date===v.date && x.voterId===v.voterId);
+  if(i>=0) arr[i]=v; else arr.push(v);
+}
+async function voteRemote(v){
+  const res = await fetch(syncUrl, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify({vote:v})});
+  if(!res.ok) throw new Error("HTTP "+res.status);
+  const out = await res.json().catch(()=>({}));
+  if(out && out.ok===false) throw new Error(out.error||"voto rifiutato");
+  return true;
+}
+async function castVote(pid){
+  if(!state.votes) state.votes=[];
+  const v = { date:todayStr(), voterId:getVoterId(), pid:String(pid), ts:Date.now() };
+  upsertVote(state.votes, v);
+  saveData();          // salvataggio locale (e push completo se sei un registratore)
+  renderMvp();         // aggiornamento immediato
+  if(syncUrl){
+    try{
+      await voteRemote(v);                          // voto aperto, senza password
+      const cloud = await cloudPull();              // riallineo i voti degli altri
+      state = normalizeImport(cloud); renderMvp();
+    }catch(e){ toast("Voto non inviato — riprova"); }
+  }
+}
+function computeMvp(){
+  const votes = (state.votes||[]).filter(v => season==="all" ? true : monthKey(v.date)===season);
+  const byDate = {};
+  votes.forEach(v=>{ (byDate[v.date] = byDate[v.date]||{}); byDate[v.date][v.pid]=(byDate[v.date][v.pid]||0)+1; });
+  const titles={}, tot={};
+  Object.values(byDate).forEach(tally=>{
+    let max=0; Object.values(tally).forEach(n=>{ if(n>max) max=n; });
+    Object.entries(tally).forEach(([pid,n])=>{ tot[pid]=(tot[pid]||0)+n; if(n===max && max>0) titles[pid]=(titles[pid]||0)+1; });
+  });
+  const ids = new Set([...Object.keys(titles), ...Object.keys(tot)]);
+  return [...ids].map(pid=>({pid, titles:titles[pid]||0, votes:tot[pid]||0}))
+                 .sort((a,b)=> b.titles-a.titles || b.votes-a.votes);
+}
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "id"+Math.random().toString(36).slice(2)+Date.now());
 const byId = id => state.players.find(p=>p.id===id);
@@ -564,6 +628,7 @@ function render(){
   if(view==="play") return renderPlay();
   if(view==="solo") return renderSolo();
   if(view==="pairs") return renderPairs();
+  if(view==="mvp") return renderMvp();
   if(view==="players") return renderPlayers();
   if(view==="history") return renderHistory();
   if(view==="data") return renderData();
@@ -746,6 +811,93 @@ function renderPairs(){
   wireProvToggle();
 }
 
+function renderMvp(){
+  if(state.players.length===0){
+    views.innerHTML = `<section class="card"><div class="empty">
+      <div class="big">Aggiungi prima i giocatori</div>
+      <p>Servono dei giocatori per poter votare l'MVP di giornata.</p>
+      <button class="btn" onclick="go('players')">Vai a Giocatori</button>
+    </div></section>`;
+    return;
+  }
+  const today = todayStr();
+  const myVoteRec = (state.votes||[]).find(v=>v.date===today && v.voterId===getVoterId());
+  const myVote = myVoteRec ? myVoteRec.pid : null;
+
+  // spoglio di oggi
+  const tally = {};
+  (state.votes||[]).filter(v=>v.date===today).forEach(v=>{ tally[v.pid]=(tally[v.pid]||0)+1; });
+  const todayTotal = Object.values(tally).reduce((a,b)=>a+b,0);
+  const maxToday = Math.max(0, ...Object.values(tally));
+
+  // pulsanti voto (in ordine alfabetico)
+  const chips = state.players.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>{
+    const mine = p.id===myVote;
+    return `<button class="vote-chip${mine?' mine':''}" data-vote="${p.id}">
+      ${esc(p.name)}${mine?' <span class="chk">✓</span>':''}
+    </button>`;
+  }).join("");
+
+  // barre spoglio (solo chi ha voti), leader evidenziato
+  const bars = Object.entries(tally)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([pid,n])=>{
+      const pctW = maxToday? Math.round(n/maxToday*100) : 0;
+      const lead = n===maxToday && maxToday>0;
+      return `<div class="mvp-row">
+        <span class="mvp-name">${esc(nameOf(pid))}${lead?' <span class="crown">MVP</span>':''}</span>
+        <div class="mvp-track"><div class="mvp-fill${lead?' lead':''}" style="width:${pctW}%"></div></div>
+        <span class="mvp-count">${n}</span>
+      </div>`;
+    }).join("");
+
+  const dataFmt = new Date().toLocaleDateString("it-IT", {weekday:"long", day:"numeric", month:"long"});
+
+  // classifica MVP (titoli di giornata)
+  const board = computeMvp();
+  const boardRows = board.map((r,i)=>{
+    const rk = i<3 ? `top${i+1}` : "";
+    return `<tr>
+      <td class="rank ${rk}">${i+1}</td>
+      <td class="name">${esc(nameOf(r.pid))}</td>
+      <td class="num"><span class="elo">${r.titles}</span></td>
+      <td class="num">${r.votes}</td>
+    </tr>`;
+  }).join("");
+
+  views.innerHTML = `
+  <section class="card">
+    <div class="card-head"><h2>MVP di oggi</h2><span class="muted" style="text-transform:capitalize">${dataFmt}</span></div>
+    <p class="muted">Vota il giocatore della giornata. Può votare chiunque apra la pagina, un voto a testa — puoi cambiarlo finché è oggi.</p>
+    <div class="vote-grid">${chips}</div>
+    <p class="hint" id="voteHint">${ myVote ? `Hai votato <strong>${esc(nameOf(myVote))}</strong> — tocca un altro nome per cambiare.` : "Non hai ancora votato oggi." }</p>
+    <div class="mvp-tally">
+      ${ todayTotal ? `<div class="mvp-tally-head">Spoglio di oggi · ${todayTotal} vot${todayTotal===1?'o':'i'}</div>${bars}` : `<div class="mvp-empty">Ancora nessun voto oggi. Apri le danze!</div>` }
+    </div>
+    <button class="btn ghost small" id="mvpRefresh" style="margin-top:14px">Aggiorna voti</button>
+  </section>
+
+  <section class="card">
+    <h2>Classifica MVP</h2>
+    <p class="muted">Titoli di MVP conquistati (giornate vinte)${season==="all"?"":" in questa stagione"}.</p>
+    ${ board.length
+      ? `<div class="table-scroll"><table>
+          <thead><tr><th class="rank">#</th><th>Giocatore</th><th class="num">Titoli MVP</th><th class="num">Voti totali</th></tr></thead>
+          <tbody>${boardRows}</tbody>
+        </table></div>`
+      : `<div class="empty"><div class="big">Ancora nessun MVP</div><p>Appena partono i voti, qui cresce la classifica dei più votati.</p></div>` }
+  </section>`;
+
+  views.querySelectorAll(".vote-chip").forEach(b=>{
+    b.addEventListener("click", ()=>castVote(b.dataset.vote));
+  });
+  document.getElementById("mvpRefresh").addEventListener("click", async ()=>{
+    if(!syncUrl){ toast("Sincronizzazione non attiva"); return; }
+    try{ const cloud=await cloudPull(); state=normalizeImport(cloud); renderMvp(); toast("Voti aggiornati"); }
+    catch(e){ toast("Impossibile aggiornare i voti"); }
+  });
+}
+
 function renderPlayers(){
   const {solo} = compute();
   const statById = Object.fromEntries(solo.map(s=>[s.id,s]));
@@ -889,7 +1041,7 @@ function infoBox(){
 function buildExport(){
   return { app:"calcetto-balilla", version:1, exportedAt:new Date().toISOString(),
            settings:{minSolo:minSolo(), minPair:minPair()},
-           players:state.players, matches:state.matches };
+           players:state.players, matches:state.matches, votes:state.votes||[] };
 }
 
 function exportJSON(){
@@ -929,6 +1081,10 @@ function normalizeImport(obj){
     players: players.map(p=>({id:String(p.id), name:String(p.name)})),
     matches: matches.map(m=>({id:String(m.id), date:m.date, a:[String(m.a[0]),String(m.a[1])],
               b:[String(m.b[0]),String(m.b[1])], sa:+m.sa, sb:+m.sb, ts:m.ts||Date.now()})),
+    votes: Array.isArray(obj.votes)
+      ? obj.votes.filter(v=>v && v.date && v.voterId && v.pid)
+                 .map(v=>({date:String(v.date), voterId:String(v.voterId), pid:String(v.pid), ts:v.ts||Date.now()}))
+      : [],
     settings: {
       minSolo: Number.isFinite(+obj.settings?.minSolo) ? Math.max(1,Math.min(50,+obj.settings.minSolo)) : DEFAULT_MIN_SOLO,
       minPair: Number.isFinite(+obj.settings?.minPair) ? Math.max(1,Math.min(50,+obj.settings.minPair)) : DEFAULT_MIN_PAIR
@@ -1145,6 +1301,7 @@ document.getElementById("season").addEventListener("change", e=>{ season=e.targe
   if(!state.players) state.players=[];
   if(!state.matches) state.matches=[];
   if(!state.settings) state.settings={minSolo:DEFAULT_MIN_SOLO, minPair:DEFAULT_MIN_PAIR};
+  if(!state.votes) state.votes=[];
   if(!persistOK) document.getElementById("storageWarn").style.display="block";
   rebuildSeasons();
   render();
