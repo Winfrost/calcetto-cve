@@ -993,15 +993,14 @@ function renderData(){
 
     <div class="data-box" style="margin:14px 0">
       <h3>Sincronizzazione con Google Drive</h3>
-      <p>La pagina legge <em>e salva</em> le partite in un file sul tuo Drive, tramite l'app Web di Apps Script. Tutti leggono; per <strong>scrivere</strong> serve la password che dai solo alle persone autorizzate — resta salvata solo nel loro browser, mai nel sito.</p>
-      <input type="text" class="text" id="syncUrlInput" placeholder="URL app Web (finisce con /exec)" value="${esc(syncUrl)}" style="margin-bottom:10px">
-      <input type="password" class="text" id="drivePassInput" placeholder="Password di scrittura (solo per chi registra le partite)" value="${esc(drivePass)}">
+      <p>La classifica è condivisa: tutti la leggono in automatico. Per <strong>registrare le partite</strong> serve la password, che resta salvata solo nel tuo browser — inseriscila e premi Attiva.</p>
+      <input type="password" class="text" id="drivePassInput" placeholder="Password di scrittura" value="${esc(drivePass)}">
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
         <button class="btn" id="btnSaveSync">Attiva</button>
         <button class="btn ghost" id="btnPullSync">Sincronizza ora</button>
         <button class="btn ghost" id="btnClearSync">Disattiva</button>
       </div>
-      <p class="sync-status" id="syncStatus" data-kind="${syncUrl?'ok':''}">${syncUrl ? "Sincronizzazione attiva ✓" : "Non configurata"}</p>
+      <p class="sync-status" id="syncStatus" data-kind="${syncUrl?'ok':''}">${syncUrl ? (drivePass ? "Lettura e scrittura ✓" : "Sola lettura — inserisci la password per scrivere") : "Non configurata"}</p>
     </div>
 
     <p class="muted">Puoi anche scaricare una copia completa in JSON da conservare, e ripristinarla quando vuoi.</p>
@@ -1030,32 +1029,25 @@ function renderData(){
     const f=e.target.files[0]; if(f) importJSON(f); e.target.value="";
   });
 
-  const syncInput = document.getElementById("syncUrlInput");
   const drivePassInput = document.getElementById("drivePassInput");
   document.getElementById("btnSaveSync").addEventListener("click", async ()=>{
-    const u=(syncInput.value||"").trim();
-    if(!/^https:\/\/script\.google\.com\/.*\/exec$/.test(u)){ toast("URL non valido: deve essere l'app Web che finisce con /exec"); return; }
-    syncUrl=u; persistSyncUrl(u);
+    if(!syncUrl){ toast("URL di sincronizzazione non impostato nel file"); return; }
     drivePass=(drivePassInput.value||"").trim(); persistDrivePass(drivePass);
+    if(!drivePass){ toast("Inserisci la password per poter scrivere"); return; }
     setSyncStatus("Connessione…");
     try{
       const cloud = await cloudPull();
       const next = normalizeImport(cloud);
       const hasData = next.players.length || next.matches.length;
       if(hasData){ state = next; season="all"; rebuildSeasons(); }
-      if(drivePass){
-        await cloudPush();
-        setSyncStatus("Attiva — lettura e scrittura ✓","ok");
-        toast(hasData ? "Collegato: dati caricati, scrittura attiva" : "Collegato: dati caricati sul Drive");
-      }else{
-        setSyncStatus("Attiva — sola lettura (senza password non puoi scrivere)","ok");
-        toast("Collegato in sola lettura");
-      }
+      await cloudPush();
+      setSyncStatus("Lettura e scrittura ✓","ok");
+      toast("Scrittura attiva");
       view="solo"; render();
     }catch(e){
       const msg = String(e.message||"");
       if(/non autorizzato|401|403/.test(msg)){ setSyncStatus("Password di scrittura errata","err"); toast("Password errata"); }
-      else { setSyncStatus("Collegamento non riuscito — controlla URL","err"); toast("Impossibile collegarsi al Drive"); }
+      else { setSyncStatus("Collegamento non riuscito","err"); toast("Impossibile collegarsi al Drive"); }
     }
   });
   document.getElementById("btnPullSync").addEventListener("click", async ()=>{
