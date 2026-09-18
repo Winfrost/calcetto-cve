@@ -1,11 +1,4 @@
 {
-  "app": "calcetto-balilla",
-  "version": 1,
-  "exportedAt": "2026-09-17T12:16:48.192Z",
-  "settings": {
-    "minSolo": 5,
-    "minPair": 3
-  },
   "players": [
     {
       "id": "952f9410-6d45-4ee9-9b9d-f2634dd901d8",
@@ -2046,6 +2039,25 @@
       "sa": 6,
       "sb": 8,
       "ts": 1789646813028
+    },
+    {
+      "id": "e15e1c85-4d0c-4a77-aa6e-24443e09878a",
+      "date": "2026-09-18",
+      "a": [
+        "e4890bdf-9e6e-4fbc-b5d2-79603e4f8912",
+        "952f9410-6d45-4ee9-9b9d-f2634dd901d8"
+      ],
+      "b": [
+        "fa921fef-9a7c-454c-b4e6-d9ca6b321948",
+        "b8467ef8-f127-4d4e-aeb6-86896230288a"
+      ],
+      "sa": 4,
+      "sb": 0,
+      "ts": 1789721653383
     }
-  ]
+  ],
+  "settings": {
+    "minSolo": 5,
+    "minPair": 3
+  }
 }
