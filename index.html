@@ -983,36 +983,15 @@ function renderData(){
     }
   ]
 }`;
-  const srcMsg = dataSource==="file"
-      ? "In uso ora: il file risultati.json del sito ✓"
-      : (dataSource==="drive" ? "In uso ora: i dati dal Google Drive ✓"
-      : (dataSource==="github" ? "In uso ora: i dati da GitHub ✓"
-      : "In uso ora: i dati salvati su questo browser"));
+  const srcMsg = dataSource==="drive" ? "In uso ora: i dati dal Google Drive ✓"
+      : "In uso ora: i dati salvati su questo browser";
   views.innerHTML = `
   <section class="card">
     <h2>Dati e backup</h2>
-    <p class="save-note"><span class="dot"></span> Salvataggio automatico attivo: ogni partita resta memorizzata su questo dispositivo.</p>
+    <p class="save-note"><span class="dot"></span> Salvataggio automatico attivo su questo dispositivo.</p>
+    <p class="sync-status" data-kind="${dataSource==='drive'?'ok':''}" style="margin:0 0 4px">${srcMsg}</p>
 
-    <div class="data-box" style="margin-bottom:14px">
-      <h3>File condiviso del sito — risultati.json</h3>
-      <p>All'apertura la pagina carica in automatico il file <code>risultati.json</code> dalla stessa cartella del sito, se presente. Per aggiornare la classifica che vedono tutti: premi il pulsante qui sotto e carica il file ottenuto nel repository (stessa cartella, stesso nome), poi fai commit.</p>
-      <button class="btn" id="btnExportResults">Scarica risultati.json</button>
-      <p class="sync-status" id="dataSourceNote" data-kind="${dataSource==='locale'?'':'ok'}">${srcMsg}</p>
-    </div>
-
-    <div class="data-box" style="margin-bottom:14px">
-      <h3>Scrittura automatica su GitHub</h3>
-      <p>Con un token di accesso, la pagina scrive da sola <code>${GH_PATH}</code> nel repository <code>${GH_REPO}</code> a ogni partita: la classifica si aggiorna per tutti, senza caricare file a mano. Il token resta salvato <strong>solo su questo browser</strong>, mai nel sito, e serve solo a chi registra le partite.</p>
-      <input type="password" class="text" id="ghTokenInput" placeholder="Token GitHub (github_pat_… o ghp_…)" value="${esc(ghToken)}">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
-        <button class="btn" id="btnGhSave">Attiva</button>
-        <button class="btn ghost" id="btnGhPull">Sincronizza ora</button>
-        <button class="btn ghost" id="btnGhClear">Disattiva</button>
-      </div>
-      <p class="sync-status" id="ghStatus" data-kind="${ghToken?'ok':''}">${ghToken ? "Scrittura su GitHub attiva ✓" : "Non configurata"}</p>
-    </div>
-
-    <div class="data-box" style="margin-bottom:14px">
+    <div class="data-box" style="margin:14px 0">
       <h3>Sincronizzazione con Google Drive</h3>
       <p>La pagina legge <em>e salva</em> le partite in un file sul tuo Drive, tramite l'app Web di Apps Script. Tutti leggono; per <strong>scrivere</strong> serve la password che dai solo alle persone autorizzate — resta salvata solo nel loro browser, mai nel sito.</p>
       <input type="text" class="text" id="syncUrlInput" placeholder="URL app Web (finisce con /exec)" value="${esc(syncUrl)}" style="margin-bottom:10px">
@@ -1022,13 +1001,10 @@ function renderData(){
         <button class="btn ghost" id="btnPullSync">Sincronizza ora</button>
         <button class="btn ghost" id="btnClearSync">Disattiva</button>
       </div>
-        <button class="btn ghost" id="btnPullSync">Sincronizza ora</button>
-        <button class="btn ghost" id="btnClearSync">Disattiva</button>
-      </div>
       <p class="sync-status" id="syncStatus" data-kind="${syncUrl?'ok':''}">${syncUrl ? "Sincronizzazione attiva ✓" : "Non configurata"}</p>
     </div>
 
-    <p class="muted">Puoi comunque scaricare una copia completa in JSON da conservare, e ripristinarla quando vuoi.</p>
+    <p class="muted">Puoi anche scaricare una copia completa in JSON da conservare, e ripristinarla quando vuoi.</p>
     <div class="data-grid">
       <div class="data-box">
         <h3>Esporta</h3>
@@ -1042,16 +1018,6 @@ function renderData(){
       </div>
     </div>
 
-    <div class="data-box" style="margin-top:14px">
-      <h3>In alternativa: backup via testo</h3>
-      <p>Metodo a prova di blocco, utile quando la pagina è <strong>incorporata</strong> (es. Google Sites), dove il pulsante file può non aprire nulla. «Mostra / copia» riempie il riquadro con il backup attuale; per ripristinare, incollaci un backup e premi «Importa dal testo».</p>
-      <textarea id="jsonArea" class="text mono" rows="6" placeholder="Incolla qui il contenuto del file .json…"></textarea>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
-        <button class="btn ghost" id="btnFillArea">Mostra / copia backup</button>
-        <button class="btn" id="btnImportText">Importa dal testo</button>
-      </div>
-    </div>
-
     <details class="info"><summary>Com'è fatto il file</summary><div class="ibody">
       <p>Una struttura semplice e leggibile: l'elenco dei <code>players</code> (id + nome) e delle <code>matches</code> (data, le due squadre come coppie di id, e il punteggio <code>sa</code>–<code>sb</code>).</p>
       <pre class="code-block">${esc(example)}</pre>
@@ -1059,23 +1025,9 @@ function renderData(){
   </section>`;
 
   document.getElementById("btnExport").addEventListener("click", exportJSON);
-  document.getElementById("btnExportResults").addEventListener("click", exportResultsFile);
   const fileInput = document.getElementById("fileImport");
   fileInput.addEventListener("change", e=>{
     const f=e.target.files[0]; if(f) importJSON(f); e.target.value="";
-  });
-
-  const area = document.getElementById("jsonArea");
-  document.getElementById("btnFillArea").addEventListener("click", async ()=>{
-    const data = JSON.stringify(buildExport(), null, 2);
-    area.value = data; area.focus(); area.select();
-    try{ await navigator.clipboard.writeText(data); toast("Backup copiato negli appunti"); }
-    catch(e){ toast("Backup pronto: è selezionato, premi Ctrl/Cmd+C per copiarlo"); }
-  });
-  document.getElementById("btnImportText").addEventListener("click", ()=>{
-    const txt = area.value.trim();
-    if(!txt){ toast("Incolla prima un backup nel riquadro"); return; }
-    importText(txt);
   });
 
   const syncInput = document.getElementById("syncUrlInput");
@@ -1091,9 +1043,8 @@ function renderData(){
       const next = normalizeImport(cloud);
       const hasData = next.players.length || next.matches.length;
       if(hasData){ state = next; season="all"; rebuildSeasons(); }
-      // se ho la password, provo una scrittura per confermarla
       if(drivePass){
-        if(!hasData) await cloudPush(); else await cloudPush();
+        await cloudPush();
         setSyncStatus("Attiva — lettura e scrittura ✓","ok");
         toast(hasData ? "Collegato: dati caricati, scrittura attiva" : "Collegato: dati caricati sul Drive");
       }else{
@@ -1122,46 +1073,6 @@ function renderData(){
     persistDrivePass(""); drivePass = "";
     setSyncStatus(syncUrl ? "Attiva dall'URL nel codice" : "Sincronizzazione disattivata", syncUrl?"ok":"");
     toast("Sincronizzazione disattivata");
-  });
-
-  const ghInput = document.getElementById("ghTokenInput");
-  document.getElementById("btnGhSave").addEventListener("click", async ()=>{
-    const t=(ghInput.value||"").trim();
-    if(!t){ toast("Incolla prima il token GitHub"); return; }
-    ghToken=t; persistGhToken(t);
-    setGhStatus("Verifica accesso…");
-    try{
-      const cur = await ghRead();
-      if(cur.data && (cur.data.players?.length || cur.data.matches?.length)){
-        state = normalizeImport(cur.data); dataSource="github"; season="all"; rebuildSeasons();
-        setGhStatus("Scrittura su GitHub attiva ✓","ok");
-        toast("Collegato a GitHub: dati caricati");
-        view="solo"; render();
-      }else{
-        await ghWrite(); dataSource="github";
-        setGhStatus("Scrittura su GitHub attiva ✓","ok");
-        toast("Collegato: risultati.json creato su GitHub");
-        renderData();
-      }
-    }catch(e){
-      setGhStatus("Accesso non riuscito — controlla token e permessi del repository","err");
-      toast("GitHub non raggiungibile");
-    }
-  });
-  document.getElementById("btnGhPull").addEventListener("click", async ()=>{
-    if(!ghToken){ toast("Scrittura GitHub non attiva"); return; }
-    setGhStatus("Lettura da GitHub…");
-    try{
-      const cur = await ghRead();
-      if(cur.data){ state = normalizeImport(cur.data); dataSource="github"; season="all"; rebuildSeasons(); }
-      setGhStatus("Aggiornato da GitHub ✓","ok");
-      view="solo"; render();
-    }catch(e){ setGhStatus("GitHub non raggiungibile","err"); }
-  });
-  document.getElementById("btnGhClear").addEventListener("click", ()=>{
-    persistGhToken(""); ghToken="";
-    setGhStatus("Scrittura su GitHub disattivata");
-    toast("Token rimosso da questo browser");
   });
 }
 
