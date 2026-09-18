@@ -354,14 +354,18 @@ async function saveData(){
 // Per attivarla su tutta la pagina, incolla qui l'URL dell'app Web (finisce con /exec):
 const SYNC_URL = "";
 const SYNC_KEY = "calcetto:sync";
+const DRIVE_PASS_KEY = "calcetto:drivepass";
 let syncUrl = "";
+let drivePass = "";
 
 // File JSON condiviso caricato in automatico dalla stessa cartella del sito (es. GitHub Pages)
 const DATA_FILE = "risultati.json";
-let dataSource = "locale"; // "locale" | "file" | "drive"
+let dataSource = "locale"; // "locale" | "file" | "drive" | "github"
 
 function loadSyncUrl(){ try{ return localStorage.getItem(SYNC_KEY)||""; }catch(e){ return ""; } }
 function persistSyncUrl(u){ try{ if(u) localStorage.setItem(SYNC_KEY,u); else localStorage.removeItem(SYNC_KEY); }catch(e){} }
+function loadDrivePass(){ try{ return localStorage.getItem(DRIVE_PASS_KEY)||""; }catch(e){ return ""; } }
+function persistDrivePass(p){ try{ if(p) localStorage.setItem(DRIVE_PASS_KEY,p); else localStorage.removeItem(DRIVE_PASS_KEY); }catch(e){} }
 function setSyncStatus(msg, kind){ const el=document.getElementById("syncStatus"); if(el){ el.textContent=msg; el.dataset.kind=kind||""; } }
 
 async function cloudPull(){
@@ -370,19 +374,22 @@ async function cloudPull(){
   return JSON.parse(await res.text());
 }
 async function cloudPush(){
-  // text/plain evita il preflight CORS che Apps Script non gestisce
-  const res = await fetch(syncUrl, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(state)});
+  // text/plain evita il preflight CORS; la password autorizza la scrittura
+  const res = await fetch(syncUrl, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body:JSON.stringify({ pass: drivePass, data: state })});
   if(!res.ok) throw new Error("HTTP "+res.status);
+  const out = await res.json().catch(()=>({}));
+  if(out && out.ok===false) throw new Error(out.error||"non autorizzato");
   return true;
 }
 let pushTimer=null;
 function pushSoon(){
-  if(!syncUrl) return;
+  if(!syncUrl || !drivePass) return; // senza password la pagina è in sola lettura
   clearTimeout(pushTimer);
   setSyncStatus("Salvataggio sul Drive…");
   pushTimer=setTimeout(async ()=>{
     try{ await cloudPush(); setSyncStatus("Salvato sul Drive ✓","ok"); }
-    catch(e){ setSyncStatus("Errore nel salvataggio sul Drive","err"); }
+    catch(e){ setSyncStatus("Scrittura rifiutata — password errata?","err"); }
   }, 700);
 }
 
@@ -1007,10 +1014,14 @@ function renderData(){
 
     <div class="data-box" style="margin-bottom:14px">
       <h3>Sincronizzazione con Google Drive</h3>
-      <p>In alternativa al file: incolla l'URL dell'app Web di Apps Script (finisce con <code>/exec</code>) e la pagina legge <em>e salva</em> le partite lì, in automatico, senza dover ricaricare nulla a mano.</p>
-      <input type="text" class="text" id="syncUrlInput" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(syncUrl)}">
+      <p>La pagina legge <em>e salva</em> le partite in un file sul tuo Drive, tramite l'app Web di Apps Script. Tutti leggono; per <strong>scrivere</strong> serve la password che dai solo alle persone autorizzate — resta salvata solo nel loro browser, mai nel sito.</p>
+      <input type="text" class="text" id="syncUrlInput" placeholder="URL app Web (finisce con /exec)" value="${esc(syncUrl)}" style="margin-bottom:10px">
+      <input type="password" class="text" id="drivePassInput" placeholder="Password di scrittura (solo per chi registra le partite)" value="${esc(drivePass)}">
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
         <button class="btn" id="btnSaveSync">Attiva</button>
+        <button class="btn ghost" id="btnPullSync">Sincronizza ora</button>
+        <button class="btn ghost" id="btnClearSync">Disattiva</button>
+      </div>
         <button class="btn ghost" id="btnPullSync">Sincronizza ora</button>
         <button class="btn ghost" id="btnClearSync">Disattiva</button>
       </div>
@@ -1068,28 +1079,32 @@ function renderData(){
   });
 
   const syncInput = document.getElementById("syncUrlInput");
+  const drivePassInput = document.getElementById("drivePassInput");
   document.getElementById("btnSaveSync").addEventListener("click", async ()=>{
     const u=(syncInput.value||"").trim();
     if(!/^https:\/\/script\.google\.com\/.*\/exec$/.test(u)){ toast("URL non valido: deve essere l'app Web che finisce con /exec"); return; }
     syncUrl=u; persistSyncUrl(u);
+    drivePass=(drivePassInput.value||"").trim(); persistDrivePass(drivePass);
     setSyncStatus("Connessione…");
     try{
       const cloud = await cloudPull();
       const next = normalizeImport(cloud);
-      if(next.players.length || next.matches.length){
-        state = next; season="all"; rebuildSeasons();
-        setSyncStatus("Sincronizzazione attiva ✓","ok");
-        toast("Collegato: dati caricati dal Drive");
-        view="solo"; render();
+      const hasData = next.players.length || next.matches.length;
+      if(hasData){ state = next; season="all"; rebuildSeasons(); }
+      // se ho la password, provo una scrittura per confermarla
+      if(drivePass){
+        if(!hasData) await cloudPush(); else await cloudPush();
+        setSyncStatus("Attiva — lettura e scrittura ✓","ok");
+        toast(hasData ? "Collegato: dati caricati, scrittura attiva" : "Collegato: dati caricati sul Drive");
       }else{
-        await cloudPush(); // Drive vuoto: ci carico i dati attuali
-        setSyncStatus("Sincronizzazione attiva ✓","ok");
-        toast("Collegato: dati attuali caricati sul Drive");
-        renderData();
+        setSyncStatus("Attiva — sola lettura (senza password non puoi scrivere)","ok");
+        toast("Collegato in sola lettura");
       }
+      view="solo"; render();
     }catch(e){
-      setSyncStatus("Collegamento non riuscito — controlla URL e permessi","err");
-      toast("Impossibile collegarsi al Drive");
+      const msg = String(e.message||"");
+      if(/non autorizzato|401|403/.test(msg)){ setSyncStatus("Password di scrittura errata","err"); toast("Password errata"); }
+      else { setSyncStatus("Collegamento non riuscito — controlla URL","err"); toast("Impossibile collegarsi al Drive"); }
     }
   });
   document.getElementById("btnPullSync").addEventListener("click", async ()=>{
@@ -1098,12 +1113,13 @@ function renderData(){
     try{
       const next = normalizeImport(await cloudPull());
       state = next; season="all"; rebuildSeasons();
-      setSyncStatus("Aggiornato dal Drive ✓","ok");
+      setSyncStatus(drivePass ? "Aggiornato — lettura e scrittura ✓" : "Aggiornato — sola lettura ✓","ok");
       view="solo"; render();
     }catch(e){ setSyncStatus("Drive non raggiungibile","err"); }
   });
   document.getElementById("btnClearSync").addEventListener("click", ()=>{
     persistSyncUrl(""); syncUrl = SYNC_URL || "";
+    persistDrivePass(""); drivePass = "";
     setSyncStatus(syncUrl ? "Attiva dall'URL nel codice" : "Sincronizzazione disattivata", syncUrl?"ok":"");
     toast("Sincronizzazione disattivata");
   });
@@ -1220,6 +1236,7 @@ document.getElementById("season").addEventListener("change", e=>{ season=e.targe
 (async function init(){
   wireModal();
   syncUrl = loadSyncUrl() || SYNC_URL;
+  drivePass = loadDrivePass();
   ghToken = loadGhToken();
   state = await loadData();
   if(!state.players) state.players=[];
