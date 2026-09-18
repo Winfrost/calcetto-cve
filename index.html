@@ -344,7 +344,8 @@ async function saveData(){
     try{ localStorage.setItem(KEY,payload); persistOK=true; hideWarn(); done=true; }catch(e){}
   }
   if(!done){ persistOK=false; showWarn(); }
-  if(syncUrl) pushSoon(); // invia al Drive se la sincronizzazione è attiva
+  if(syncUrl) pushSoon();   // invia al Drive se attivo
+  if(ghToken) ghPushSoon(); // invia a GitHub se attivo
 }
 
 /* =========================================================
@@ -383,6 +384,83 @@ function pushSoon(){
     try{ await cloudPush(); setSyncStatus("Salvato sul Drive ✓","ok"); }
     catch(e){ setSyncStatus("Errore nel salvataggio sul Drive","err"); }
   }, 700);
+}
+
+/* =========================================================
+   SINCRONIZZAZIONE CON GITHUB (legge e scrive risultati.json via API)
+   ========================================================= */
+const GH_REPO   = "Winfrost/calcetto-cve"; // proprietario/repository
+const GH_PATH   = "risultati.json";
+const GH_BRANCH = "main";
+const GH_TOKEN_KEY = "calcetto:ghtoken";
+let ghToken = "";
+
+function loadGhToken(){ try{ return localStorage.getItem(GH_TOKEN_KEY)||""; }catch(e){ return ""; } }
+function persistGhToken(t){ try{ if(t) localStorage.setItem(GH_TOKEN_KEY,t); else localStorage.removeItem(GH_TOKEN_KEY); }catch(e){} }
+function setGhStatus(msg, kind){ const el=document.getElementById("ghStatus"); if(el){ el.textContent=msg; el.dataset.kind=kind||""; } }
+
+function b64encodeUtf8(s){
+  const bytes = new TextEncoder().encode(s);
+  let bin=""; const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk){ bin += String.fromCharCode.apply(null, bytes.subarray(i,i+chunk)); }
+  return btoa(bin);
+}
+function b64decodeUtf8(b64){
+  const bin = atob(b64.replace(/\s/g,""));
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+function ghUrl(){ return `https://api.github.com/repos/${GH_REPO}/contents/${GH_PATH}`; }
+function ghHeaders(){
+  const h={ "Accept":"application/vnd.github+json" };
+  if(ghToken) h["Authorization"]="Bearer "+ghToken;
+  return h;
+}
+async function ghRead(){
+  const res = await fetch(ghUrl()+`?ref=${GH_BRANCH}&t=${Date.now()}`, {headers:ghHeaders(), cache:"no-store"});
+  if(res.status===404) return {data:null, sha:null};
+  if(!res.ok) throw new Error("lettura GitHub HTTP "+res.status);
+  const j = await res.json();
+  return { data: JSON.parse(b64decodeUtf8(j.content)), sha: j.sha };
+}
+function mergeStates(a, b){
+  let base;
+  try{ base = a ? normalizeImport(a) : null; }catch(e){ base = null; }
+  if(!base) return b;
+  const pmap=new Map(); [...base.players, ...b.players].forEach(p=>pmap.set(p.id,p));
+  const mmap=new Map(); [...base.matches, ...b.matches].forEach(m=>mmap.set(m.id,m));
+  return { players:[...pmap.values()], matches:[...mmap.values()], settings: b.settings||base.settings };
+}
+async function ghWrite(){
+  if(!ghToken) throw new Error("token mancante");
+  let sha=null;
+  try{ sha=(await ghRead()).sha; }catch(e){}
+  const put = async (sha)=>{
+    const body={ message:"Aggiorna risultati — "+new Date().toISOString(), branch:GH_BRANCH,
+                 content:b64encodeUtf8(JSON.stringify(state, null, 2)) };
+    if(sha) body.sha=sha;
+    return fetch(ghUrl(), {method:"PUT", headers:{...ghHeaders(),"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  };
+  let res = await put(sha);
+  if(res.status===409 || res.status===422){
+    // qualcun altro ha scritto nel frattempo: unisco e riprovo
+    const cur = await ghRead();
+    state = mergeStates(cur.data, state);
+    res = await put(cur.sha);
+  }
+  if(!res.ok) throw new Error("scrittura GitHub HTTP "+res.status);
+  return true;
+}
+let ghTimer=null;
+function ghPushSoon(){
+  if(!ghToken) return;
+  clearTimeout(ghTimer);
+  setGhStatus("Salvataggio su GitHub…");
+  ghTimer=setTimeout(async ()=>{
+    try{ await ghWrite(); setGhStatus("Salvato su GitHub ✓","ok"); }
+    catch(e){ setGhStatus("Errore nel salvataggio su GitHub — token o permessi?","err"); }
+  }, 900);
 }
 
 /* =========================================================
@@ -900,7 +978,9 @@ function renderData(){
 }`;
   const srcMsg = dataSource==="file"
       ? "In uso ora: il file risultati.json del sito ✓"
-      : (dataSource==="drive" ? "In uso ora: i dati dal Google Drive ✓" : "In uso ora: i dati salvati su questo browser");
+      : (dataSource==="drive" ? "In uso ora: i dati dal Google Drive ✓"
+      : (dataSource==="github" ? "In uso ora: i dati da GitHub ✓"
+      : "In uso ora: i dati salvati su questo browser"));
   views.innerHTML = `
   <section class="card">
     <h2>Dati e backup</h2>
@@ -911,6 +991,18 @@ function renderData(){
       <p>All'apertura la pagina carica in automatico il file <code>risultati.json</code> dalla stessa cartella del sito, se presente. Per aggiornare la classifica che vedono tutti: premi il pulsante qui sotto e carica il file ottenuto nel repository (stessa cartella, stesso nome), poi fai commit.</p>
       <button class="btn" id="btnExportResults">Scarica risultati.json</button>
       <p class="sync-status" id="dataSourceNote" data-kind="${dataSource==='locale'?'':'ok'}">${srcMsg}</p>
+    </div>
+
+    <div class="data-box" style="margin-bottom:14px">
+      <h3>Scrittura automatica su GitHub</h3>
+      <p>Con un token di accesso, la pagina scrive da sola <code>${GH_PATH}</code> nel repository <code>${GH_REPO}</code> a ogni partita: la classifica si aggiorna per tutti, senza caricare file a mano. Il token resta salvato <strong>solo su questo browser</strong>, mai nel sito, e serve solo a chi registra le partite.</p>
+      <input type="password" class="text" id="ghTokenInput" placeholder="Token GitHub (github_pat_… o ghp_…)" value="${esc(ghToken)}">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn" id="btnGhSave">Attiva</button>
+        <button class="btn ghost" id="btnGhPull">Sincronizza ora</button>
+        <button class="btn ghost" id="btnGhClear">Disattiva</button>
+      </div>
+      <p class="sync-status" id="ghStatus" data-kind="${ghToken?'ok':''}">${ghToken ? "Scrittura su GitHub attiva ✓" : "Non configurata"}</p>
     </div>
 
     <div class="data-box" style="margin-bottom:14px">
@@ -1015,6 +1107,46 @@ function renderData(){
     setSyncStatus(syncUrl ? "Attiva dall'URL nel codice" : "Sincronizzazione disattivata", syncUrl?"ok":"");
     toast("Sincronizzazione disattivata");
   });
+
+  const ghInput = document.getElementById("ghTokenInput");
+  document.getElementById("btnGhSave").addEventListener("click", async ()=>{
+    const t=(ghInput.value||"").trim();
+    if(!t){ toast("Incolla prima il token GitHub"); return; }
+    ghToken=t; persistGhToken(t);
+    setGhStatus("Verifica accesso…");
+    try{
+      const cur = await ghRead();
+      if(cur.data && (cur.data.players?.length || cur.data.matches?.length)){
+        state = normalizeImport(cur.data); dataSource="github"; season="all"; rebuildSeasons();
+        setGhStatus("Scrittura su GitHub attiva ✓","ok");
+        toast("Collegato a GitHub: dati caricati");
+        view="solo"; render();
+      }else{
+        await ghWrite(); dataSource="github";
+        setGhStatus("Scrittura su GitHub attiva ✓","ok");
+        toast("Collegato: risultati.json creato su GitHub");
+        renderData();
+      }
+    }catch(e){
+      setGhStatus("Accesso non riuscito — controlla token e permessi del repository","err");
+      toast("GitHub non raggiungibile");
+    }
+  });
+  document.getElementById("btnGhPull").addEventListener("click", async ()=>{
+    if(!ghToken){ toast("Scrittura GitHub non attiva"); return; }
+    setGhStatus("Lettura da GitHub…");
+    try{
+      const cur = await ghRead();
+      if(cur.data){ state = normalizeImport(cur.data); dataSource="github"; season="all"; rebuildSeasons(); }
+      setGhStatus("Aggiornato da GitHub ✓","ok");
+      view="solo"; render();
+    }catch(e){ setGhStatus("GitHub non raggiungibile","err"); }
+  });
+  document.getElementById("btnGhClear").addEventListener("click", ()=>{
+    persistGhToken(""); ghToken="";
+    setGhStatus("Scrittura su GitHub disattivata");
+    toast("Token rimosso da questo browser");
+  });
 }
 
 /* =========================================================
@@ -1088,6 +1220,7 @@ document.getElementById("season").addEventListener("change", e=>{ season=e.targe
 (async function init(){
   wireModal();
   syncUrl = loadSyncUrl() || SYNC_URL;
+  ghToken = loadGhToken();
   state = await loadData();
   if(!state.players) state.players=[];
   if(!state.matches) state.matches=[];
@@ -1095,27 +1228,26 @@ document.getElementById("season").addEventListener("change", e=>{ season=e.targe
   if(!persistOK) document.getElementById("storageWarn").style.display="block";
   rebuildSeasons();
   render();
-  // Fonte principale dei dati, in ordine: Drive (Apps Script) → file risultati.json → dati locali
+  // Fonte principale dei dati, in ordine: Drive → GitHub (con token) → file risultati.json → dati locali
   if(syncUrl){
     try{
-      const next = normalizeImport(await cloudPull());
-      state = next; dataSource = "drive";
-      rebuildSeasons();
-      render();
-    }catch(e){
-      toast("Drive non raggiungibile: uso i dati locali");
-    }
+      state = normalizeImport(await cloudPull()); dataSource = "drive";
+      rebuildSeasons(); render();
+    }catch(e){ toast("Drive non raggiungibile: uso i dati locali"); }
+  } else if(ghToken){
+    try{
+      const cur = await ghRead();
+      if(cur.data){ state = normalizeImport(cur.data); dataSource = "github"; rebuildSeasons(); render(); }
+    }catch(e){ toast("GitHub non raggiungibile: uso i dati locali"); }
   } else {
     // Carico il file condiviso pubblicato nella stessa cartella (GitHub Pages, ecc.)
     try{
       const res = await fetch(DATA_FILE + "?v=" + Date.now(), {cache:"no-store"});
       if(res.ok){
-        const next = normalizeImport(JSON.parse(await res.text()));
-        state = next; dataSource = "file";
-        rebuildSeasons();
-        render();
+        state = normalizeImport(JSON.parse(await res.text())); dataSource = "file";
+        rebuildSeasons(); render();
       }
-    }catch(e){ /* file assente o non ancora presente: uso i dati locali */ }
+    }catch(e){ /* file assente: uso i dati locali */ }
   }
 })();
 </script>
