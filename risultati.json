@@ -2134,7 +2134,7 @@
     }
   ],
   "settings": {
-    "minSolo": 5,
+    "minSolo": 6,
     "minPair": 3
   }
 }
