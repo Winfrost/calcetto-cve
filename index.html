@@ -595,6 +595,11 @@ function inSeason(dateStr){
   if(season.length===4) return (dateStr||"").slice(0,4)===season; // anno intero
   return monthKey(dateStr)===season;                              // mese
 }
+function eloScopeNote(){
+  if(season==="all") return "Elo di tutti i tempi, mai azzerato";
+  if(season.length===4) return `Elo dell'anno ${season}, riparte il 1º gennaio`;
+  return `Elo di ${monthLabel(season)}, riparte a inizio mese`;
+}
 function filteredMatches(){
   const ms = state.matches.filter(m => inSeason(m.date));
   return ms.slice().sort((a,b)=> (a.date===b.date ? a.ts-b.ts : a.date.localeCompare(b.date)));
@@ -828,7 +833,7 @@ function renderSolo(){
   const troph = computeTrophies();
   const provList = solo.filter(s=>s.g<M);
   const shown = showProvisional ? solo : solo.filter(s=>s.g>=M);
-  const note = `${count} partite · ordinata per punteggio Elo`
+  const note = `${count} partite · ${eloScopeNote()}`
     + (provList.length && !showProvisional ? ` · ${provList.length} esclusi con meno di ${M} partite` : "");
   const rows = shown.map((s,i)=>{
     const rk = i<3 ? `top${i+1}` : "";
