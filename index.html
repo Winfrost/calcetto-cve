@@ -200,6 +200,21 @@
   .empty{text-align:center;padding:34px 16px;color:var(--ink-soft)}
   .empty .big{font-family:"Anton",sans-serif;font-size:20px;color:var(--ink);margin-bottom:6px}
 
+  /* ---------- TROFEI ---------- */
+  .trophies{display:inline-flex;gap:7px;margin-left:8px;vertical-align:middle}
+  .trophy{display:inline-flex;align-items:center;gap:2px;font-size:13px;line-height:1}
+  .trophy b{font-variant-numeric:tabular-nums;font-weight:800;font-size:12px;color:var(--ink-soft)}
+  .scu{width:13px;height:16px;vertical-align:middle;filter:drop-shadow(0 1px 0 rgba(0,0,0,.08))}
+  .honor{display:flex;align-items:center;gap:14px;border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .honor + .honor{margin-top:10px}
+  .honor .hrank{font-family:"Anton",sans-serif;font-size:22px;color:var(--ink-soft);width:30px;text-align:center}
+  .honor .hname{flex:1;font-weight:700;font-size:16px}
+  .honor .hset{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .honor .hitem{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-variant-numeric:tabular-nums}
+  .honor .hitem .scu{width:20px;height:24px}
+  .honor .hitem .em{font-size:22px}
+  .honor .hitem small{font-size:11px;color:var(--ink-soft);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+
   /* ---------- MVP ---------- */
   .vote-grid{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 4px}
   .vote-chip{font-family:inherit;font-weight:600;font-size:15px;color:var(--ink);background:#fff;
@@ -297,6 +312,7 @@
     <button class="tab" role="tab" data-view="solo" aria-selected="false">Classifica</button>
     <button class="tab" role="tab" data-view="pairs" aria-selected="false">Coppie</button>
     <button class="tab" role="tab" data-view="mvp" aria-selected="false">MVP</button>
+    <button class="tab" role="tab" data-view="trophies" aria-selected="false">Albo d'oro</button>
     <button class="tab" role="tab" data-view="players" aria-selected="false">Giocatori</button>
     <button class="tab" role="tab" data-view="history" aria-selected="false">Storico</button>
     <button class="tab" role="tab" data-view="data" aria-selected="false">Dati</button>
@@ -310,6 +326,14 @@
 </div>
 
 <div id="toast" class="toast"></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="scuGrad" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#1c8049"/><stop offset="0.34" stop-color="#1c8049"/>
+    <stop offset="0.34" stop-color="#ffffff"/><stop offset="0.66" stop-color="#ffffff"/>
+    <stop offset="0.66" stop-color="#e23b3b"/><stop offset="1" stop-color="#e23b3b"/>
+  </linearGradient>
+</defs></svg>
 
 <div id="modal" class="modal-overlay" aria-hidden="true">
   <div class="modal-box" role="dialog" aria-modal="true">
@@ -623,6 +647,72 @@ function compute(){
   return {solo, pair, count: ms.length};
 }
 
+// Classifica individuale calcolata su un sottoinsieme di partite (per i mini-campionati)
+function soloRankFrom(ms){
+  const rating={}, ps={};
+  const R = id => (rating[id] ?? (rating[id]=1000,1000));
+  const P = id => ps[id] || (ps[id]={id,g:0,w:0,l:0,gf:0,ga:0});
+  for(const m of ms){
+    const [a1,a2]=m.a,[b1,b2]=m.b;
+    const avgA=(R(a1)+R(a2))/2, avgB=(R(b1)+R(b2))/2;
+    const eA=1/(1+Math.pow(10,(avgB-avgA)/400)), eB=1-eA;
+    let sA; if(m.sa>m.sb)sA=1; else if(m.sa<m.sb)sA=0; else sA=0.5;
+    const sB=1-sA;
+    rating[a1]=R(a1)+K*(sA-eA); rating[a2]=R(a2)+K*(sA-eA);
+    rating[b1]=R(b1)+K*(sB-eB); rating[b2]=R(b2)+K*(sB-eB);
+    for(const id of [a1,a2]){const s=P(id);s.g++;s.gf+=m.sa;s.ga+=m.sb;sA>0.5?s.w++:(sA<0.5?s.l++:0);}
+    for(const id of [b1,b2]){const s=P(id);s.g++;s.gf+=m.sb;s.ga+=m.sa;sB>0.5?s.w++:(sB<0.5?s.l++:0);}
+  }
+  return Object.values(ps).map(s=>({...s, elo:Math.round(rating[s.id]), pct:s.g?s.w/s.g:0, diff:s.gf-s.ga}))
+    .sort((x,y)=> y.elo-x.elo || y.pct-x.pct || y.diff-x.diff);
+}
+
+// Trofei: coppe per i mesi conclusi (1º/2º/3º), scudetto per gli anni conclusi (1º).
+// Un mese/anno viene assegnato solo quando è finito (dal 1º del periodo successivo).
+const CUP_MIN_GAMES = 10; // partite minime nel periodo per vincere una coppa/scudetto
+
+function computeTrophies(){
+  const now=new Date();
+  const curYM = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const curY  = String(now.getFullYear());
+  const trophies={};
+  const T = pid => trophies[pid] || (trophies[pid]={pid,gold:0,silver:0,bronze:0,scu1:0,scu2:0,scu3:0});
+  // mesi conclusi -> coppe (solo chi ha >= 10 partite nel mese)
+  [...new Set(state.matches.map(m=>monthKey(m.date)).filter(Boolean))].forEach(ym=>{
+    if(ym>=curYM) return; // mese in corso: non ancora assegnato
+    const pod=soloRankFrom(state.matches.filter(m=>monthKey(m.date)===ym)).filter(s=>s.g>=CUP_MIN_GAMES);
+    if(pod[0]) T(pod[0].id).gold++;
+    if(pod[1]) T(pod[1].id).silver++;
+    if(pod[2]) T(pod[2].id).bronze++;
+  });
+  // anni conclusi -> scudetto al podio (1º/2º/3º, sempre con >= 10 partite)
+  [...new Set(state.matches.map(m=>(m.date||"").slice(0,4)).filter(Boolean))].forEach(y=>{
+    if(y>=curY) return; // anno in corso: non ancora assegnato
+    const pod=soloRankFrom(state.matches.filter(m=>(m.date||"").slice(0,4)===y)).filter(s=>s.g>=CUP_MIN_GAMES);
+    if(pod[0]) T(pod[0].id).scu1++;
+    if(pod[1]) T(pod[1].id).scu2++;
+    if(pod[2]) T(pod[2].id).scu3++;
+  });
+  return trophies;
+}
+
+const SCU_GOLD="#c8a24b", SCU_SILVER="#9aa3a8", SCU_BRONZE="#b07a3c";
+function scudettoSvg(stroke){
+  return `<svg class="scu" viewBox="0 0 20 24" aria-hidden="true"><path d="M10 1 L19 4 V12.5 C19 18.5 14.2 21.6 10 23 C5.8 21.6 1 18.5 1 12.5 V4 Z" fill="url(#scuGrad)" stroke="${stroke}" stroke-width="1.6"/></svg>`;
+}
+
+function trophyBadges(t){
+  if(!t) return "";
+  const p=[];
+  if(t.scu1) p.push(`<span class="trophy" title="Scudetto — 1º dell'anno">${scudettoSvg(SCU_GOLD)}<b>${t.scu1}</b></span>`);
+  if(t.scu2) p.push(`<span class="trophy" title="Scudetto d'argento — 2º dell'anno">${scudettoSvg(SCU_SILVER)}<b>${t.scu2}</b></span>`);
+  if(t.scu3) p.push(`<span class="trophy" title="Scudetto di bronzo — 3º dell'anno">${scudettoSvg(SCU_BRONZE)}<b>${t.scu3}</b></span>`);
+  if(t.gold)   p.push(`<span class="trophy" title="1º del mese">🥇<b>${t.gold}</b></span>`);
+  if(t.silver) p.push(`<span class="trophy" title="2º del mese">🥈<b>${t.silver}</b></span>`);
+  if(t.bronze) p.push(`<span class="trophy" title="3º del mese">🥉<b>${t.bronze}</b></span>`);
+  return p.length? `<span class="trophies">${p.join("")}</span>` : "";
+}
+
 /* =========================================================
    RENDER
    ========================================================= */
@@ -637,6 +727,7 @@ function render(){
   if(view==="solo") return renderSolo();
   if(view==="pairs") return renderPairs();
   if(view==="mvp") return renderMvp();
+  if(view==="trophies") return renderTrophies();
   if(view==="players") return renderPlayers();
   if(view==="history") return renderHistory();
   if(view==="data") return renderData();
@@ -729,6 +820,7 @@ function renderSolo(){
   const {solo, count} = compute();
   if(!solo.length){ return emptyState("Ancora nessuna partita in questa stagione","Registra qualche match e qui comparirà la classifica individuale con i punti Elo."); }
   const M = minSolo();
+  const troph = computeTrophies();
   const provList = solo.filter(s=>s.g<M);
   const shown = showProvisional ? solo : solo.filter(s=>s.g>=M);
   const note = `${count} partite · ordinata per punteggio Elo`
@@ -739,7 +831,7 @@ function renderSolo(){
     const diff = (s.diff>0?"+":"")+s.diff;
     return `<tr>
       <td class="rank ${rk}">${i+1}</td>
-      <td class="name">${esc(nameOf(s.id))}${prov}</td>
+      <td class="name">${esc(nameOf(s.id))}${trophyBadges(troph[s.id])}${prov}</td>
       <td class="num"><span class="elo">${s.elo}</span></td>
       <td class="num wl"><span class="w">${s.w}</span>–<span class="l">${s.l}</span></td>
       <td class="num">${Math.round(s.pct*100)}%</td>
@@ -904,6 +996,44 @@ function renderMvp(){
     try{ const cloud=await cloudPull(); if(cloud && Array.isArray(cloud.votes)){ state.votes=cloud.votes; } renderMvp(); toast("Voti aggiornati"); }
     catch(e){ toast("Impossibile aggiornare i voti"); }
   });
+}
+
+function renderTrophies(){
+  const troph = computeTrophies();
+  const weight = t => t.scu1*1e8 + t.scu2*1e6 + t.scu3*1e4 + t.gold*100 + t.silver*10 + t.bronze;
+  const board = Object.values(troph)
+    .filter(t => t.scu1||t.scu2||t.scu3||t.gold||t.silver||t.bronze)
+    .sort((a,b)=> weight(b)-weight(a));
+
+  const now = new Date();
+  const curMonthName = now.toLocaleDateString("it-IT",{month:"long"});
+  const rows = board.map((t,i)=>{
+    const items=[];
+    if(t.scu1) items.push(`<span class="hitem" title="1º dell'anno">${scudettoSvg(SCU_GOLD)}${t.scu1}<small>scudetto</small></span>`);
+    if(t.scu2) items.push(`<span class="hitem" title="2º dell'anno">${scudettoSvg(SCU_SILVER)}${t.scu2}<small>2º anno</small></span>`);
+    if(t.scu3) items.push(`<span class="hitem" title="3º dell'anno">${scudettoSvg(SCU_BRONZE)}${t.scu3}<small>3º anno</small></span>`);
+    if(t.gold)   items.push(`<span class="hitem"><span class="em">🥇</span>${t.gold}<small>oro</small></span>`);
+    if(t.silver) items.push(`<span class="hitem"><span class="em">🥈</span>${t.silver}<small>argento</small></span>`);
+    if(t.bronze) items.push(`<span class="hitem"><span class="em">🥉</span>${t.bronze}<small>bronzo</small></span>`);
+    return `<div class="honor">
+      <span class="hrank">${i+1}</span>
+      <span class="hname">${esc(nameOf(t.pid))}</span>
+      <span class="hset">${items.join("")}</span>
+    </div>`;
+  }).join("");
+
+  views.innerHTML = `
+  <section class="card">
+    <h2>Albo d'oro</h2>
+    <p class="muted">Coppe dei mini-campionati mensili e scudetti annuali. Vengono assegnati a periodo concluso: il vincitore di ${esc(curMonthName)} entrerà in bacheca il 1º del mese prossimo.</p>
+    ${ board.length ? rows
+      : `<div class="empty"><div class="big">Bacheca ancora vuota</div><p>Appena si chiude il primo mese, il podio (con almeno 10 partite giocate) prende oro, argento e bronzo. A fine anno il podio dell'anno conquista gli scudetti.</p></div>` }
+    <details class="info"><summary>Come si vincono i trofei</summary><div class="ibody">
+      <p><strong>Coppe mensili.</strong> Ogni mese è un mini-campionato a sé (Elo che riparte da zero). A mese finito, tra chi ha giocato <strong>almeno 10 partite</strong> nel mese, il 1º riceve <span class="trophy">🥇</span>, il 2º <span class="trophy">🥈</span>, il 3º <span class="trophy">🥉</span>.</p>
+      <p><strong>Scudetti.</strong> A fine anno, sulla classifica dell'intero anno (sempre con almeno 10 partite), il podio conquista lo scudetto: 1º oro ${scudettoSvg(SCU_GOLD)}, 2º argento ${scudettoSvg(SCU_SILVER)}, 3º bronzo ${scudettoSvg(SCU_BRONZE)}. Si assegnano il 1º gennaio.</p>
+      <p>Il mese e l'anno ancora in corso non assegnano nulla finché non si concludono.</p>
+    </div></details>
+  </section>`;
 }
 
 function renderPlayers(){
