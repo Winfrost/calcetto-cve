@@ -518,7 +518,7 @@ function ghPushSoon(){
    ========================================================= */
 let state = {players:[],matches:[],votes:[]};
 let view = "play";
-let season = "all"; // "all" oppure "YYYY-MM"
+let season = String(new Date().getFullYear()); // default: anno in corso (Elo azzerato ogni anno)
 let showProvisional = false; // provvisori nascosti di default
 const K = 28;            // sensibilità Elo
 const DEFAULT_MIN_SOLO = 5;   // soglia predefinita per il singolo
@@ -566,7 +566,7 @@ async function castVote(pid){
   }
 }
 function computeMvp(){
-  const votes = (state.votes||[]).filter(v => season==="all" ? true : monthKey(v.date)===season);
+  const votes = (state.votes||[]).filter(v => inSeason(v.date));
   const byDate = {};
   votes.forEach(v=>{ (byDate[v.date] = byDate[v.date]||{}); byDate[v.date][v.pid]=(byDate[v.date][v.pid]||0)+1; });
   const titles={}, tot={};
@@ -590,8 +590,13 @@ const monthLabel = ym => {
   return `${mesi[(+m)-1]} ${y}`;
 };
 
+function inSeason(dateStr){
+  if(season==="all") return true;
+  if(season.length===4) return (dateStr||"").slice(0,4)===season; // anno intero
+  return monthKey(dateStr)===season;                              // mese
+}
 function filteredMatches(){
-  const ms = state.matches.filter(m => season==="all" ? true : monthKey(m.date)===season);
+  const ms = state.matches.filter(m => inSeason(m.date));
   return ms.slice().sort((a,b)=> (a.date===b.date ? a.ts-b.ts : a.date.localeCompare(b.date)));
 }
 
@@ -1367,12 +1372,26 @@ function renderData(){
    ========================================================= */
 function rebuildSeasons(){
   const sel = document.getElementById("season");
-  const set = new Set(state.matches.map(m=>monthKey(m.date)).filter(Boolean));
-  const months = [...set].sort().reverse();
-  const cur = season;
-  sel.innerHTML = `<option value="all">Tutte le stagioni</option>` +
-    months.map(ym=>`<option value="${ym}">${monthLabel(ym)}</option>`).join("");
-  sel.value = months.includes(cur)||cur==="all" ? cur : "all";
+  const months = [...new Set(state.matches.map(m=>monthKey(m.date)).filter(Boolean))].sort().reverse();
+  const years  = [...new Set(months.map(m=>m.slice(0,4)))].sort().reverse();
+  const curY = String(new Date().getFullYear());
+
+  let html = "";
+  years.forEach(y=>{
+    html += `<option value="${y}">${y} — anno intero</option>`;
+    months.filter(m=>m.slice(0,4)===y).forEach(m=>{
+      html += `<option value="${m}">&nbsp;&nbsp;${monthLabel(m)}</option>`;
+    });
+  });
+  // l'anno in corso c'è sempre come scelta, anche senza partite
+  if(!years.includes(curY)){
+    html = `<option value="${curY}">${curY} — anno intero</option>` + html;
+  }
+  html += `<option value="all">Tutto lo storico</option>`;
+  sel.innerHTML = html;
+
+  const opts = new Set([...years, ...months, curY, "all"]);
+  sel.value = opts.has(season) ? season : curY;
   season = sel.value;
 }
 
