@@ -2225,12 +2225,18 @@
     {
       "date": "2026-09-22",
       "voterId": "831a249a-0a64-4bcc-801d-5fc9efad538a",
-      "pid": "9d7494b1-5fee-40e7-8d60-cfa103483c7c",
-      "ts": 1790078992150
+      "pid": "b8467ef8-f127-4d4e-aeb6-86896230288a",
+      "ts": 1790079281575
+    },
+    {
+      "date": "2026-09-22",
+      "voterId": "1d0d5801-c01f-41a0-86af-b3ecbb025192",
+      "pid": "e4890bdf-9e6e-4fbc-b5d2-79603e4f8912",
+      "ts": 1790079235838
     }
   ],
   "settings": {
     "minSolo": 10,
-    "minPair": 3
+    "minPair": 10
   }
 }
