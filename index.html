@@ -210,6 +210,11 @@
   .cal-row.m1000{border-left-color:#7c5bc0}
   .cal-row.m500{border-left-color:#3f82b8}
   .cal-tier{font-family:"Anton",sans-serif;font-size:12px;letter-spacing:.03em;text-transform:uppercase;padding:3px 8px;border-radius:6px;color:#fff;flex:0 0 auto}
+  .cal-tier.slam{background:var(--field)}
+  .cal-tier.m1000{background:#7c5bc0}
+  .cal-tier.m500{background:#3f82b8}
+  .cal-row.now{background:#f1f8f3;box-shadow:0 0 0 1px var(--field) inset}
+  .nowtag{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:var(--field);border-radius:5px;padding:1px 6px;margin-left:8px;vertical-align:middle}
   .cal-row.slam .cal-tier{background:var(--field)}
   .cal-row.m1000 .cal-tier{background:#7c5bc0}
   .cal-row.m500 .cal-tier{background:#3f82b8}
@@ -747,18 +752,20 @@ function trophyBadges(t){
 /* ===== Ranking stile ATP: calendario di tornei (periodi), 3 livelli, somma ultimi 12 mesi ===== */
 // Ogni torneo è un PERIODO dell'anno (non tutto il mese). Modificabile: date, livello, nome.
 const TOURNAMENTS = [
-  { name:"Slam d'Inverno",       tier:"slam",  from:"01-05", to:"01-27" },
-  { name:"Master 500 · Febbraio",tier:"m500",  from:"02-05", to:"02-25" },
-  { name:"Master 1000 · Marzo",  tier:"m1000", from:"03-05", to:"03-27" },
-  { name:"Slam di Primavera",    tier:"slam",  from:"04-05", to:"04-27" },
-  { name:"Master 500 · Maggio",  tier:"m500",  from:"05-05", to:"05-27" },
-  { name:"Master 1000 · Giugno", tier:"m1000", from:"06-05", to:"06-27" },
-  { name:"Slam d'Estate",        tier:"slam",  from:"07-05", to:"07-27" },
-  { name:"Master 500 · Agosto",  tier:"m500",  from:"08-05", to:"08-27" },
-  { name:"Master 1000 · Settembre",tier:"m1000",from:"09-05", to:"09-27" },
-  { name:"Slam d'Autunno",       tier:"slam",  from:"10-05", to:"10-27" },
-  { name:"Master 500 · Novembre",tier:"m500",  from:"11-05", to:"11-27" },
-  { name:"Master 1000 · Dicembre",tier:"m1000",from:"12-05", to:"12-27" },
+  { name:"Slam d'Apertura",   tier:"slam",  from:"01-13", to:"01-26" }, // 14 giorni
+  { name:"500 di Febbraio",   tier:"m500",  from:"02-09", to:"02-15" }, //  7
+  { name:"1000 di Marzo",     tier:"m1000", from:"03-02", to:"03-12" }, // 11
+  { name:"500 di fine Marzo", tier:"m500",  from:"03-23", to:"03-28" }, //  6
+  { name:"Slam di Primavera", tier:"slam",  from:"04-13", to:"04-27" }, // 15
+  { name:"500 di Maggio",     tier:"m500",  from:"05-11", to:"05-17" }, //  7
+  { name:"1000 di Giugno",    tier:"m1000", from:"06-01", to:"06-11" }, // 11
+  { name:"Slam d'Estate",     tier:"slam",  from:"07-06", to:"07-19" }, // 14
+  { name:"1000 d'Agosto",     tier:"m1000", from:"08-10", to:"08-20" }, // 11
+  { name:"500 di Settembre",  tier:"m500",  from:"09-01", to:"09-07" }, //  7
+  { name:"Slam d'Autunno",    tier:"slam",  from:"09-22", to:"10-05" }, // 14 (a cavallo)
+  { name:"1000 d'Autunno",    tier:"m1000", from:"10-26", to:"11-04" }, // 10 (a cavallo)
+  { name:"500 di Novembre",   tier:"m500",  from:"11-22", to:"11-28" }, //  7
+  { name:"1000 Finale",       tier:"m1000", from:"12-08", to:"12-16" }, //  9
 ];
 const ATP_POINTS = {
   slam:  [2000,1200,720,360,180,90,45],
@@ -783,6 +790,25 @@ function tournamentGroups(){
     (groups[year+"#"+idx]=groups[year+"#"+idx]||{year:+year, idx, matches:[]}).matches.push(m);
   }
   return Object.values(groups);
+}
+const MESI3=["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
+const fmtMD = md => { const [m,d]=md.split("-"); return `${+d} ${MESI3[+m-1]}`; };
+function todayMD(){ const n=new Date(); return `${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; }
+function currentTournament(){ const md=todayMD(); const idx=TOURNAMENTS.findIndex(t=> md>=t.from && md<=t.to); return idx<0?null:{idx, t:TOURNAMENTS[idx]}; }
+function nextTournament(){
+  const md=todayMD();
+  const up=TOURNAMENTS.filter(t=>t.from>md).sort((a,b)=>a.from.localeCompare(b.from))[0];
+  return up || TOURNAMENTS.slice().sort((a,b)=>a.from.localeCompare(b.from))[0]; // altrimenti il primo (anno prossimo)
+}
+// Classifica live del torneo idx per l'anno in corso, con i punti provvisori
+function tournamentLive(idx){
+  const year=String(new Date().getFullYear());
+  const ms=state.matches.filter(m=> tournamentForDate(m.date)===idx && (m.date||"").slice(0,4)===year);
+  const standings=soloRankFrom(ms);
+  const qualified=standings.filter(s=>s.g>=ATP_MIN_GAMES);
+  const t=TOURNAMENTS[idx], table=ATP_POINTS[t.tier], tail=ATP_TAIL[t.tier];
+  const rows=qualified.map((s,i)=>({...s, pos:i+1, pts:(i<table.length?table[i]:tail)}));
+  return { rows, notReady: standings.length-qualified.length };
 }
 
 // Ranking ATP: punti dei tornei degli ultimi 12 mesi (istanza in corso = live)
@@ -1152,13 +1178,44 @@ function renderAtp(){
   const rows = computeAtp();
   const tierClass = { slam:"slam", m1000:"m1000", m500:"m500" };
   const tierShort = { slam:"Slam", m1000:"1000", m500:"500" };
+
+  // --- scheda del torneo in corso (o del prossimo) ---
+  const cur = currentTournament();
+  let liveCard;
+  if(cur){
+    const live = tournamentLive(cur.idx);
+    const t = cur.t;
+    const lrows = live.rows.map(r=>`<tr>
+      <td class="rank ${r.pos<=3?'top'+r.pos:''}">${r.pos}</td>
+      <td class="name">${esc(nameOf(r.id))}</td>
+      <td class="num">${r.g}</td>
+      <td class="num"><span class="elo">${r.pts}</span></td>
+    </tr>`).join("");
+    liveCard = `<section class="card">
+      <div class="card-head"><h2>Torneo in corso</h2><span class="cal-tier ${t.tier}">${tierShort[t.tier]}</span></div>
+      <p class="muted"><strong>${esc(t.name)}</strong> · ${fmtMD(t.from)}–${fmtMD(t.to)}. Punti provvisori in base alla posizione di ora.</p>
+      ${ live.rows.length
+        ? `<div class="table-scroll"><table><thead><tr><th class="rank">#</th><th>Giocatore</th><th class="num">Part.</th><th class="num">Punti</th></tr></thead><tbody>${lrows}</tbody></table></div>`
+        : `<div class="empty"><div class="big">Ancora nessun punteggio</div><p>Giocate qualche partita in questo periodo: servono almeno ${ATP_MIN_GAMES} partite per entrare nella classifica del torneo.</p></div>` }
+      ${ live.notReady ? `<p class="hint">${live.notReady} giocator${live.notReady===1?'e':'i'} non ancora qualificat${live.notReady===1?'o':'i'} (sotto le ${ATP_MIN_GAMES} partite).</p>` : "" }
+    </section>`;
+  } else {
+    const nx = nextTournament();
+    liveCard = `<section class="card">
+      <h2>Torneo in corso</h2>
+      <p class="muted">Nessun torneo in questo momento (siamo in una pausa del calendario). Prossimo: <strong>${esc(nx.name)}</strong> <span class="cal-tier ${nx.tier}">${tierShort[nx.tier]}</span> dal ${fmtMD(nx.from)}.</p>
+    </section>`;
+  }
+
   const cal = TOURNAMENTS.map(t=>{
-    const [fm,fd]=t.from.split("-"), [tm,td]=t.to.split("-");
-    const mesi=["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
-    const periodo = fm===tm ? `${+fd}–${+td} ${mesi[+fm-1]}` : `${+fd} ${mesi[+fm-1]}–${+td} ${mesi[+tm-1]}`;
-    return `<div class="cal-row ${tierClass[t.tier]}">
-      <span class="cal-tier">${tierShort[t.tier]}</span>
-      <span class="cal-name">${esc(t.name)}</span>
+    const fm=t.from.slice(0,2), tm=t.to.slice(0,2);
+    const periodo = fm===tm
+      ? `${+t.from.slice(3)}–${+t.to.slice(3)} ${MESI3[+fm-1]}`
+      : `${fmtMD(t.from)}–${fmtMD(t.to)}`;
+    const running = cur && cur.t===t;
+    return `<div class="cal-row ${tierClass[t.tier]}${running?' now':''}">
+      <span class="cal-tier ${t.tier}">${tierShort[t.tier]}</span>
+      <span class="cal-name">${esc(t.name)}${running?' <span class="nowtag">in corso</span>':''}</span>
       <span class="cal-when">${periodo}</span>
     </div>`;
   }).join("");
@@ -1179,6 +1236,7 @@ function renderAtp(){
     </tr>`;
   }).join("");
   views.innerHTML = `
+  ${liveCard}
   <section class="card">
     <h2>Ranking ATP</h2>
     <p class="muted">Somma dei punti dei tornei giocati negli ultimi 12 mesi (finestra mobile, come le 52 settimane ATP): i punti più vecchi di un anno scadono. Il torneo in corso conta con punti provvisori.</p>
