@@ -201,6 +201,20 @@
   .empty .big{font-family:"Anton",sans-serif;font-size:20px;color:var(--ink);margin-bottom:6px}
 
   /* ---------- TROFEI ---------- */
+  .tpill{font-size:10px;font-weight:800;border-radius:6px;padding:1px 6px;letter-spacing:.02em;line-height:1.5;white-space:nowrap}
+  .tpill.t1000{background:#ece3f7;color:#5b3fa0}
+  .tpill.t500{background:#e2eef8;color:#28618f}
+  .cal{display:flex;flex-direction:column;gap:8px}
+  .cal-row{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:10px 14px}
+  .cal-row.slam{border-left-color:var(--field)}
+  .cal-row.m1000{border-left-color:#7c5bc0}
+  .cal-row.m500{border-left-color:#3f82b8}
+  .cal-tier{font-family:"Anton",sans-serif;font-size:12px;letter-spacing:.03em;text-transform:uppercase;padding:3px 8px;border-radius:6px;color:#fff;flex:0 0 auto}
+  .cal-row.slam .cal-tier{background:var(--field)}
+  .cal-row.m1000 .cal-tier{background:#7c5bc0}
+  .cal-row.m500 .cal-tier{background:#3f82b8}
+  .cal-name{flex:1;font-weight:700;font-size:14px}
+  .cal-when{font-size:13px;color:var(--ink-soft);font-variant-numeric:tabular-nums;white-space:nowrap}
   .trophies{display:inline-flex;gap:7px;margin-left:8px;vertical-align:middle}
   .trophy{display:inline-flex;align-items:center;gap:2px;font-size:13px;line-height:1}
   .trophy b{font-variant-numeric:tabular-nums;font-weight:800;font-size:12px;color:var(--ink-soft)}
@@ -313,6 +327,7 @@
     <button class="tab" role="tab" data-view="pairs" aria-selected="false">Coppie</button>
     <button class="tab" role="tab" data-view="mvp" aria-selected="false">MVP</button>
     <button class="tab" role="tab" data-view="trophies" aria-selected="false">Albo d'oro</button>
+    <button class="tab" role="tab" data-view="atp" aria-selected="false">Ranking ATP</button>
     <button class="tab" role="tab" data-view="players" aria-selected="false">Giocatori</button>
     <button class="tab" role="tab" data-view="history" aria-selected="false">Storico</button>
     <button class="tab" role="tab" data-view="data" aria-selected="false">Dati</button>
@@ -686,7 +701,7 @@ function computeTrophies(){
   const curYM = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   const curY  = String(now.getFullYear());
   const trophies={};
-  const T = pid => trophies[pid] || (trophies[pid]={pid,gold:0,silver:0,bronze:0,scu1:0,scu2:0,scu3:0});
+  const T = pid => trophies[pid] || (trophies[pid]={pid,gold:0,silver:0,bronze:0,scu1:0,scu2:0,scu3:0,slam:0,m1000:0,m500:0});
   // mesi conclusi -> coppe (solo chi ha >= 10 partite nel mese)
   [...new Set(state.matches.map(m=>monthKey(m.date)).filter(Boolean))].forEach(ym=>{
     if(ym>=curYM) return; // mese in corso: non ancora assegnato
@@ -703,6 +718,9 @@ function computeTrophies(){
     if(pod[1]) T(pod[1].id).scu2++;
     if(pod[2]) T(pod[2].id).scu3++;
   });
+  // titoli tornei a vita (Slam / Master 1000 / Master 500) -> a torneo concluso
+  const tt = computeTournamentTitles();
+  Object.keys(tt).forEach(pid=>{ const o=T(pid); o.slam+=tt[pid].slam; o.m1000+=tt[pid].m1000; o.m500+=tt[pid].m500; });
   return trophies;
 }
 
@@ -717,10 +735,89 @@ function trophyBadges(t){
   if(t.scu1) p.push(`<span class="trophy" title="Scudetto — 1º dell'anno">${scudettoSvg(SCU_GOLD)}<b>${t.scu1}</b></span>`);
   if(t.scu2) p.push(`<span class="trophy" title="Scudetto d'argento — 2º dell'anno">${scudettoSvg(SCU_SILVER)}<b>${t.scu2}</b></span>`);
   if(t.scu3) p.push(`<span class="trophy" title="Scudetto di bronzo — 3º dell'anno">${scudettoSvg(SCU_BRONZE)}<b>${t.scu3}</b></span>`);
+  if(t.slam)  p.push(`<span class="trophy" title="Grandi Slam vinti">🏆<b>${t.slam}</b></span>`);
+  if(t.m1000) p.push(`<span class="tpill t1000" title="Master 1000 vinti">1000·${t.m1000}</span>`);
+  if(t.m500)  p.push(`<span class="tpill t500" title="Master 500 vinti">500·${t.m500}</span>`);
   if(t.gold)   p.push(`<span class="trophy" title="1º del mese">🥇<b>${t.gold}</b></span>`);
   if(t.silver) p.push(`<span class="trophy" title="2º del mese">🥈<b>${t.silver}</b></span>`);
   if(t.bronze) p.push(`<span class="trophy" title="3º del mese">🥉<b>${t.bronze}</b></span>`);
   return p.length? `<span class="trophies">${p.join("")}</span>` : "";
+}
+
+/* ===== Ranking stile ATP: calendario di tornei (periodi), 3 livelli, somma ultimi 12 mesi ===== */
+// Ogni torneo è un PERIODO dell'anno (non tutto il mese). Modificabile: date, livello, nome.
+const TOURNAMENTS = [
+  { name:"Slam d'Inverno",       tier:"slam",  from:"01-05", to:"01-27" },
+  { name:"Master 500 · Febbraio",tier:"m500",  from:"02-05", to:"02-25" },
+  { name:"Master 1000 · Marzo",  tier:"m1000", from:"03-05", to:"03-27" },
+  { name:"Slam di Primavera",    tier:"slam",  from:"04-05", to:"04-27" },
+  { name:"Master 500 · Maggio",  tier:"m500",  from:"05-05", to:"05-27" },
+  { name:"Master 1000 · Giugno", tier:"m1000", from:"06-05", to:"06-27" },
+  { name:"Slam d'Estate",        tier:"slam",  from:"07-05", to:"07-27" },
+  { name:"Master 500 · Agosto",  tier:"m500",  from:"08-05", to:"08-27" },
+  { name:"Master 1000 · Settembre",tier:"m1000",from:"09-05", to:"09-27" },
+  { name:"Slam d'Autunno",       tier:"slam",  from:"10-05", to:"10-27" },
+  { name:"Master 500 · Novembre",tier:"m500",  from:"11-05", to:"11-27" },
+  { name:"Master 1000 · Dicembre",tier:"m1000",from:"12-05", to:"12-27" },
+];
+const ATP_POINTS = {
+  slam:  [2000,1200,720,360,180,90,45],
+  m1000: [1000, 600,360,180, 90,45,25],
+  m500:  [ 500, 300,180, 90, 45,25,15],
+};
+const ATP_TAIL   = { slam:10, m1000:5, m500:3 };
+const TIER_LABEL = { slam:"Grande Slam", m1000:"Master 1000", m500:"Master 500" };
+const ATP_MIN_GAMES = 5; // partite minime nel torneo per prendere punti/titolo
+
+function tournamentForDate(date){
+  const md=(date||"").slice(5,10); // "MM-DD"
+  for(let i=0;i<TOURNAMENTS.length;i++){ const t=TOURNAMENTS[i]; if(md>=t.from && md<=t.to) return i; }
+  return -1; // fuori da ogni torneo (non assegna punti ATP)
+}
+// Raggruppa le partite per istanza di torneo (anno + torneo)
+function tournamentGroups(){
+  const groups={};
+  for(const m of state.matches){
+    const idx=tournamentForDate(m.date); if(idx<0) continue;
+    const year=(m.date||"").slice(0,4);
+    (groups[year+"#"+idx]=groups[year+"#"+idx]||{year:+year, idx, matches:[]}).matches.push(m);
+  }
+  return Object.values(groups);
+}
+
+// Ranking ATP: punti dei tornei degli ultimi 12 mesi (istanza in corso = live)
+function computeAtp(){
+  const now=new Date();
+  const cutoff=new Date(now.getTime()-365*24*3600*1000);
+  const pts={}, det={};
+  tournamentGroups().forEach(g=>{
+    const t=TOURNAMENTS[g.idx];
+    const start=new Date(`${g.year}-${t.from}T00:00:00`);
+    const end  =new Date(`${g.year}-${t.to}T23:59:59`);
+    if(end<cutoff || start>now) return; // fuori dalle ultime 52 settimane, o futuro
+    const table=ATP_POINTS[t.tier], tail=ATP_TAIL[t.tier];
+    soloRankFrom(g.matches).filter(s=>s.g>=ATP_MIN_GAMES).forEach((s,i)=>{
+      const p=i<table.length?table[i]:tail;
+      pts[s.id]=(pts[s.id]||0)+p;
+      (det[s.id]=det[s.id]||[]).push({tier:t.tier, name:t.name, year:g.year, pos:i+1, pts:p});
+    });
+  });
+  return Object.keys(pts).map(pid=>({pid, points:pts[pid], det:det[pid]}))
+    .sort((a,b)=> b.points-a.points || nameOf(a.pid).localeCompare(nameOf(b.pid)));
+}
+
+// Titoli tornei a vita (tornei conclusi, vincitore = pos 1): per l'Albo d'oro
+function computeTournamentTitles(){
+  const now=new Date(); const titles={};
+  const T=pid=>titles[pid]||(titles[pid]={slam:0,m1000:0,m500:0});
+  tournamentGroups().forEach(g=>{
+    const t=TOURNAMENTS[g.idx];
+    const end=new Date(`${g.year}-${t.to}T23:59:59`);
+    if(end>=now) return; // torneo non ancora concluso
+    const w=soloRankFrom(g.matches).filter(s=>s.g>=ATP_MIN_GAMES)[0];
+    if(w) T(w.id)[t.tier]++;
+  });
+  return titles;
 }
 
 /* =========================================================
@@ -738,6 +835,7 @@ function render(){
   if(view==="pairs") return renderPairs();
   if(view==="mvp") return renderMvp();
   if(view==="trophies") return renderTrophies();
+  if(view==="atp") return renderAtp();
   if(view==="players") return renderPlayers();
   if(view==="history") return renderHistory();
   if(view==="data") return renderData();
@@ -1010,21 +1108,24 @@ function renderMvp(){
 
 function renderTrophies(){
   const troph = computeTrophies();
-  const weight = t => t.scu1*1e8 + t.scu2*1e6 + t.scu3*1e4 + t.gold*100 + t.silver*10 + t.bronze;
+  // gerarchia (dal più prestigioso): scudetto oro, Slam, scudetto arg/bronzo, Master 1000, Master 500, poi medaglie mensili
+  const rank = t => [t.scu1, t.slam, t.scu2, t.scu3, t.m1000, t.m500, t.gold, t.silver, t.bronze];
+  const cmp = (a,b)=>{ const ra=rank(a),rb=rank(b); for(let i=0;i<ra.length;i++){ if(rb[i]!==ra[i]) return rb[i]-ra[i]; } return 0; };
   const board = Object.values(troph)
-    .filter(t => t.scu1||t.scu2||t.scu3||t.gold||t.silver||t.bronze)
-    .sort((a,b)=> weight(b)-weight(a));
+    .filter(t => t.scu1||t.scu2||t.scu3||t.slam||t.m1000||t.m500||t.gold||t.silver||t.bronze)
+    .sort(cmp);
 
-  const now = new Date();
-  const curMonthName = now.toLocaleDateString("it-IT",{month:"long"});
   const rows = board.map((t,i)=>{
     const items=[];
     if(t.scu1) items.push(`<span class="hitem" title="1º dell'anno">${scudettoSvg(SCU_GOLD)}${t.scu1}<small>scudetto</small></span>`);
+    if(t.slam) items.push(`<span class="hitem" title="Grandi Slam"><span class="em">🏆</span>${t.slam}<small>slam</small></span>`);
     if(t.scu2) items.push(`<span class="hitem" title="2º dell'anno">${scudettoSvg(SCU_SILVER)}${t.scu2}<small>2º anno</small></span>`);
     if(t.scu3) items.push(`<span class="hitem" title="3º dell'anno">${scudettoSvg(SCU_BRONZE)}${t.scu3}<small>3º anno</small></span>`);
-    if(t.gold)   items.push(`<span class="hitem"><span class="em">🥇</span>${t.gold}<small>oro</small></span>`);
-    if(t.silver) items.push(`<span class="hitem"><span class="em">🥈</span>${t.silver}<small>argento</small></span>`);
-    if(t.bronze) items.push(`<span class="hitem"><span class="em">🥉</span>${t.bronze}<small>bronzo</small></span>`);
+    if(t.m1000) items.push(`<span class="hitem"><span class="tpill t1000">1000</span>${t.m1000}<small>master 1000</small></span>`);
+    if(t.m500)  items.push(`<span class="hitem"><span class="tpill t500">500</span>${t.m500}<small>master 500</small></span>`);
+    if(t.gold)   items.push(`<span class="hitem"><span class="em">🥇</span>${t.gold}<small>oro mese</small></span>`);
+    if(t.silver) items.push(`<span class="hitem"><span class="em">🥈</span>${t.silver}<small>argento mese</small></span>`);
+    if(t.bronze) items.push(`<span class="hitem"><span class="em">🥉</span>${t.bronze}<small>bronzo mese</small></span>`);
     return `<div class="honor">
       <span class="hrank">${i+1}</span>
       <span class="hname">${esc(nameOf(t.pid))}</span>
@@ -1035,14 +1136,71 @@ function renderTrophies(){
   views.innerHTML = `
   <section class="card">
     <h2>Albo d'oro</h2>
-    <p class="muted">Coppe dei mini-campionati mensili e scudetti annuali. Vengono assegnati a periodo concluso: il vincitore di ${esc(curMonthName)} entrerà in bacheca il 1º del mese prossimo.</p>
+    <p class="muted">Il palmarès di tutti i tempi, in ordine di prestigio: scudetti, Grandi Slam, Master, e infine le medaglie dei mini-campionati mensili.</p>
     ${ board.length ? rows
-      : `<div class="empty"><div class="big">Bacheca ancora vuota</div><p>Appena si chiude il primo mese, il podio (con almeno 10 partite giocate) prende oro, argento e bronzo. A fine anno il podio dell'anno conquista gli scudetti.</p></div>` }
+      : `<div class="empty"><div class="big">Bacheca ancora vuota</div><p>Vincendo tornei e mesi la bacheca si riempie. Gli Slam e gli scudetti pesano molto più delle medaglie mensili.</p></div>` }
     <details class="info"><summary>Come si vincono i trofei</summary><div class="ibody">
-      <p><strong>Coppe mensili.</strong> Ogni mese è un mini-campionato a sé (Elo che riparte da zero). A mese finito, tra chi ha giocato <strong>almeno 10 partite</strong> nel mese, il 1º riceve <span class="trophy">🥇</span>, il 2º <span class="trophy">🥈</span>, il 3º <span class="trophy">🥉</span>.</p>
-      <p><strong>Scudetti.</strong> A fine anno, sulla classifica dell'intero anno (sempre con almeno 10 partite), il podio conquista lo scudetto: 1º oro ${scudettoSvg(SCU_GOLD)}, 2º argento ${scudettoSvg(SCU_SILVER)}, 3º bronzo ${scudettoSvg(SCU_BRONZE)}. Si assegnano il 1º gennaio.</p>
-      <p>Il mese e l'anno ancora in corso non assegnano nulla finché non si concludono.</p>
+      <p><strong>Tornei (ranking ATP).</strong> Vincere un torneo vale un titolo: <span class="em">🏆</span> Grande Slam, <span class="tpill t1000">1000</span> Master 1000, <span class="tpill t500">500</span> Master 500. Contano molto più delle medaglie mensili.</p>
+      <p><strong>Scudetti.</strong> A fine anno il podio della classifica annuale conquista lo scudetto: 1º oro ${scudettoSvg(SCU_GOLD)}, 2º argento ${scudettoSvg(SCU_SILVER)}, 3º bronzo ${scudettoSvg(SCU_BRONZE)}.</p>
+      <p><strong>Medaglie mensili.</strong> Il podio di ogni mese (con almeno 10 partite) prende <span class="trophy">🥇</span><span class="trophy">🥈</span><span class="trophy">🥉</span>: un riconoscimento più leggero, sotto i titoli dei tornei.</p>
+      <p>Ogni periodo (mese/torneo/anno) assegna i trofei solo una volta concluso.</p>
     </div></details>
+  </section>`;
+}
+
+function renderAtp(){
+  const rows = computeAtp();
+  const tierClass = { slam:"slam", m1000:"m1000", m500:"m500" };
+  const tierShort = { slam:"Slam", m1000:"1000", m500:"500" };
+  const cal = TOURNAMENTS.map(t=>{
+    const [fm,fd]=t.from.split("-"), [tm,td]=t.to.split("-");
+    const mesi=["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
+    const periodo = fm===tm ? `${+fd}–${+td} ${mesi[+fm-1]}` : `${+fd} ${mesi[+fm-1]}–${+td} ${mesi[+tm-1]}`;
+    return `<div class="cal-row ${tierClass[t.tier]}">
+      <span class="cal-tier">${tierShort[t.tier]}</span>
+      <span class="cal-name">${esc(t.name)}</span>
+      <span class="cal-when">${periodo}</span>
+    </div>`;
+  }).join("");
+  const body = rows.map((r,i)=>{
+    const rk=i<3?`top${i+1}`:"";
+    const tornei=r.det.length;
+    const won = tier => r.det.filter(d=>d.tier===tier && d.pos===1).length;
+    const titles=[];
+    if(won("slam"))  titles.push(`🏆${won("slam")}`);
+    if(won("m1000")) titles.push(`<span class="tpill t1000">1000·${won("m1000")}</span>`);
+    if(won("m500"))  titles.push(`<span class="tpill t500">500·${won("m500")}</span>`);
+    return `<tr>
+      <td class="rank ${rk}">${i+1}</td>
+      <td class="name">${esc(nameOf(r.pid))}</td>
+      <td class="num"><span class="elo">${r.points}</span></td>
+      <td class="num">${tornei}</td>
+      <td>${titles.join(" ")||"—"}</td>
+    </tr>`;
+  }).join("");
+  views.innerHTML = `
+  <section class="card">
+    <h2>Ranking ATP</h2>
+    <p class="muted">Somma dei punti dei tornei giocati negli ultimi 12 mesi (finestra mobile, come le 52 settimane ATP): i punti più vecchi di un anno scadono. Il torneo in corso conta con punti provvisori.</p>
+    ${ rows.length
+      ? `<div class="table-scroll"><table>
+          <thead><tr><th class="rank">#</th><th>Giocatore</th><th class="num">Punti</th><th class="num">Tornei</th><th>Titoli</th></tr></thead>
+          <tbody>${body}</tbody>
+        </table></div>`
+      : `<div class="empty"><div class="big">Nessun punto ancora</div><p>Gioca durante i periodi dei tornei: la posizione nella classifica del torneo assegna i punti.</p></div>` }
+    <details class="info"><summary>Come funzionano i punti</summary><div class="ibody">
+      <p>Ogni torneo è un <strong>periodo</strong> dell'anno (non tutto il mese). I punti vanno in base alla posizione nella classifica di quel torneo, tra chi ha giocato almeno ${ATP_MIN_GAMES} partite. Il torneo in corso conta live.</p>
+      <p><strong>Grande Slam</strong>: 1º 2000, 2º 1200, 3º 720, 4º 360, 5º 180, 6º 90, 7º 45, dagli altri 10.</p>
+      <p><strong>Master 1000</strong>: 1º 1000, 2º 600, 3º 360, 4º 180, 5º 90, 6º 45, 7º 25, dagli altri 5.</p>
+      <p><strong>Master 500</strong>: 1º 500, 2º 300, 3º 180, 4º 90, 5º 45, 6º 25, 7º 15, dagli altri 3.</p>
+      <p>Uno Slam vale il quadruplo di un 500: le vittorie "normali" non pesano come uno Slam. Il ranking è la somma degli ultimi 12 mesi.</p>
+    </div></details>
+  </section>
+
+  <section class="card">
+    <h2>Calendario tornei</h2>
+    <p class="muted">I tornei sono periodi precisi dell'anno, di tre livelli. Le partite fuori da questi periodi non danno punti ATP (ma valgono comunque per Elo e medaglie).</p>
+    <div class="cal">${cal}</div>
   </section>`;
 }
 
