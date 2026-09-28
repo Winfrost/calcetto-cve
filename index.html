@@ -1189,13 +1189,14 @@ function renderAtp(){
       <td class="rank ${r.pos<=3?'top'+r.pos:''}">${r.pos}</td>
       <td class="name">${esc(nameOf(r.id))}</td>
       <td class="num">${r.g}</td>
+      <td class="num">${r.elo}</td>
       <td class="num"><span class="elo">${r.pts}</span></td>
     </tr>`).join("");
     liveCard = `<section class="card">
       <div class="card-head"><h2>Torneo in corso</h2><span class="cal-tier ${t.tier}">${tierShort[t.tier]}</span></div>
       <p class="muted"><strong>${esc(t.name)}</strong> · ${fmtMD(t.from)}–${fmtMD(t.to)}. Punti provvisori in base alla posizione di ora.</p>
       ${ live.rows.length
-        ? `<div class="table-scroll"><table><thead><tr><th class="rank">#</th><th>Giocatore</th><th class="num">Part.</th><th class="num">Punti</th></tr></thead><tbody>${lrows}</tbody></table></div>`
+        ? `<div class="table-scroll"><table><thead><tr><th class="rank">#</th><th>Giocatore</th><th class="num">Part.</th><th class="num">Elo</th><th class="num">Punti</th></tr></thead><tbody>${lrows}</tbody></table></div>`
         : `<div class="empty"><div class="big">Ancora nessun punteggio</div><p>Giocate qualche partita in questo periodo: servono almeno ${ATP_MIN_GAMES} partite per entrare nella classifica del torneo.</p></div>` }
       ${ live.notReady ? `<p class="hint">${live.notReady} giocator${live.notReady===1?'e':'i'} non ancora qualificat${live.notReady===1?'o':'i'} (sotto le ${ATP_MIN_GAMES} partite).</p>` : "" }
     </section>`;
