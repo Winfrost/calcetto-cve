@@ -2680,7 +2680,7 @@
     }
   ],
   "settings": {
-    "minSolo": 10,
+    "minSolo": 7,
     "minPair": 10
   }
 }
