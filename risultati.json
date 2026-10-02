@@ -3713,6 +3713,6 @@
   ],
   "settings": {
     "minSolo": 1,
-    "minPair": 10
+    "minPair": 3
   }
 }
