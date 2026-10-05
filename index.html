@@ -244,6 +244,11 @@
   .pair-pick.b .plabel{color:var(--blue-deep)}
   .pair-pick .prow2{display:flex;gap:10px}
   .pair-pick .prow2 select.player{flex:1;min-width:110px}
+  .cmp-period{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .cmp-period .pplabel{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+  .cmp-period select.player{flex:0 1 auto;min-width:130px;width:auto}
+  .cmp-period input[type=date]{min-width:140px}
+  .cmp-period .pdash{color:var(--ink-soft);font-weight:700}
   .cmp-selects{display:flex;gap:10px;flex-wrap:wrap}
   .cmp-selects select.player{flex:1;min-width:140px}
   .vs-head{display:flex;align-items:center;justify-content:center;gap:14px;margin:2px 0}
@@ -575,6 +580,7 @@ let view = "play";
 let cmpA = "", cmpB = ""; // giocatori selezionati nel Confronto
 let cmpMode = "player";   // "player" | "pair"
 let cpA1="", cpA2="", cpB1="", cpB2=""; // coppie selezionate nel Confronto
+let cmpPeriod = {type:"all", month:"", tour:"", from:"", to:""}; // filtro temporale del Confronto
 let season = String(new Date().getFullYear()); // default: anno in corso (Elo azzerato ogni anno)
 let showProvisional = false; // provvisori nascosti di default
 const K = 28;            // sensibilità Elo
@@ -1083,11 +1089,58 @@ function renderPairs(){
   wireProvToggle();
 }
 
-/* ===== Confronto testa a testa tra due giocatori (tutti i tempi) ===== */
-function headToHead(x, y){
+/* ===== Filtro temporale del Confronto ===== */
+function cmpMatches(){
+  const p=cmpPeriod;
+  let ms=state.matches;
+  if(p.type==="month" && p.month) ms=ms.filter(m=>monthKey(m.date)===p.month);
+  else if(p.type==="tour" && p.tour){ const [y,idx]=p.tour.split("#"); ms=ms.filter(m=>(m.date||"").slice(0,4)===y && tournamentForDate(m.date)===+idx); }
+  else if(p.type==="dates"){ if(p.from) ms=ms.filter(m=>m.date>=p.from); if(p.to) ms=ms.filter(m=>m.date<=p.to); }
+  return ms;
+}
+function periodLabel(){
+  const p=cmpPeriod;
+  if(p.type==="month" && p.month) return monthLabel(p.month);
+  if(p.type==="tour" && p.tour){ const [y,idx]=p.tour.split("#"); return `${TOURNAMENTS[+idx]?.name||"Torneo"} ${y}`; }
+  if(p.type==="dates" && (p.from||p.to)) return `${p.from||"inizio"} → ${p.to||"oggi"}`;
+  return "tutti i tempi";
+}
+function periodControls(){
+  const months=[...new Set(state.matches.map(m=>monthKey(m.date)).filter(Boolean))].sort().reverse();
+  const groups=tournamentGroups().map(g=>({val:`${g.year}#${g.idx}`, label:`${TOURNAMENTS[g.idx].name} ${g.year}`, sort:`${g.year}-${TOURNAMENTS[g.idx].from}`})).sort((a,b)=>b.sort.localeCompare(a.sort));
+  const typeOpt=[["all","Tutti i tempi"],["month","Per mese"],["tour","Per torneo"],["dates","Date personalizzate"]]
+    .map(([v,l])=>`<option value="${v}" ${cmpPeriod.type===v?"selected":""}>${l}</option>`).join("");
+  let extra="";
+  if(cmpPeriod.type==="month"){
+    extra=`<select class="player" id="cmpPMonth">${months.length?months.map(m=>`<option value="${m}" ${cmpPeriod.month===m?"selected":""}>${monthLabel(m)}</option>`).join(""):`<option value="">nessun mese</option>`}</select>`;
+  } else if(cmpPeriod.type==="tour"){
+    extra=`<select class="player" id="cmpPTour">${groups.length?groups.map(g=>`<option value="${g.val}" ${cmpPeriod.tour===g.val?"selected":""}>${esc(g.label)}</option>`).join(""):`<option value="">nessun torneo giocato</option>`}</select>`;
+  } else if(cmpPeriod.type==="dates"){
+    extra=`<input type="date" id="cmpPFrom" value="${cmpPeriod.from}"><span class="pdash">→</span><input type="date" id="cmpPTo" value="${cmpPeriod.to}">`;
+  }
+  return `<div class="cmp-period"><span class="pplabel">Periodo</span><select class="player" id="cmpPType">${typeOpt}</select>${extra}</div>`;
+}
+function wirePeriod(){
+  const t=document.getElementById("cmpPType"); if(!t) return;
+  const months=[...new Set(state.matches.map(m=>monthKey(m.date)).filter(Boolean))].sort().reverse();
+  const gsorted=tournamentGroups().map(g=>({val:`${g.year}#${g.idx}`, sort:`${g.year}-${TOURNAMENTS[g.idx].from}`})).sort((a,b)=>b.sort.localeCompare(a.sort));
+  t.addEventListener("change", e=>{
+    cmpPeriod.type=e.target.value;
+    if(cmpPeriod.type==="month" && !cmpPeriod.month) cmpPeriod.month=months[0]||"";
+    if(cmpPeriod.type==="tour" && !cmpPeriod.tour) cmpPeriod.tour=gsorted[0]?.val||"";
+    renderCompare();
+  });
+  const mo=document.getElementById("cmpPMonth"); if(mo) mo.addEventListener("change", e=>{ cmpPeriod.month=e.target.value; renderCompare(); });
+  const tr=document.getElementById("cmpPTour"); if(tr) tr.addEventListener("change", e=>{ cmpPeriod.tour=e.target.value; renderCompare(); });
+  const fr=document.getElementById("cmpPFrom"); if(fr) fr.addEventListener("change", e=>{ cmpPeriod.from=e.target.value; renderCompare(); });
+  const tt=document.getElementById("cmpPTo");   if(tt) tt.addEventListener("change", e=>{ cmpPeriod.to=e.target.value; renderCompare(); });
+}
+
+/* ===== Confronto testa a testa tra due giocatori ===== */
+function headToHead(x, y, ms=state.matches){
   const opp={games:0, xW:0, yW:0, xG:0, yG:0, matches:[]};
   const mate={games:0, w:0, l:0};
-  for(const m of state.matches){
+  for(const m of ms){
     const xa=m.a.includes(x), xb=m.b.includes(x);
     const ya=m.a.includes(y), yb=m.b.includes(y);
     if(!(xa||xb) || !(ya||yb)) continue;
@@ -1112,8 +1165,9 @@ function cmpRow(label, a, b){
   return `<div class="cmp-row"><span class="cv a">${a}</span><span class="cl">${label}</span><span class="cv b">${b}</span></div>`;
 }
 function compareBody(x, y){
-  const {opp, mate} = headToHead(x, y);
-  const all = soloRankFrom(state.matches);
+  const ms = cmpMatches();
+  const {opp, mate} = headToHead(x, y, ms);
+  const all = soloRankFrom(ms);
   const sx = all.find(s=>s.id===x) || {elo:1000,g:0,w:0,l:0,pct:0};
   const sy = all.find(s=>s.id===y) || {elo:1000,g:0,w:0,l:0,pct:0};
   const nx = esc(nameOf(x)), ny = esc(nameOf(y));
@@ -1127,26 +1181,26 @@ function compareBody(x, y){
   const h2hCard = `<section class="card">
     <div class="vs-head"><span class="pn a">${nx}</span><span class="vsbadge">VS</span><span class="pn b">${ny}</span></div>
     ${ opp.games ? `
-      <p class="muted" style="text-align:center">${opp.games} scontr${opp.games===1?'o':'i'} dirett${opp.games===1?'o':'i'} — da avversari</p>
+      <p class="muted" style="text-align:center">${opp.games} scontr${opp.games===1?'o':'i'} dirett${opp.games===1?'o':'i'} — da avversari · ${periodLabel()}</p>
       <div class="vs-score"><span class="big a">${opp.xW}</span><span class="dash">–</span><span class="big b">${opp.yW}</span></div>
       <div class="vs-bar"><div class="a" style="width:${aW}%"></div><div class="b" style="width:${100-aW}%"></div></div>
       ${cmpRow("Vittorie", opp.xW, opp.yW)}
       ${cmpRow("% vittorie", xpct+"%", ypct+"%")}
       ${cmpRow("Reti fatte", opp.xG, opp.yG)}
       ${cmpRow("Media reti", xAvg, yAvg)}
-    ` : `<div class="empty"><div class="big">Mai sfidati da avversari</div><p>${nx} e ${ny} non si sono ancora affrontati in squadre opposte.</p></div>` }
+    ` : `<div class="empty"><div class="big">Nessuno scontro diretto</div><p>Nel periodo selezionato (${periodLabel()}) ${nx} e ${ny} non si sono affrontati da avversari.</p></div>` }
   </section>`;
 
   const mateCard = `<section class="card">
     <h2>Da compagni</h2>
     ${ mate.games
       ? `<p class="muted">Hanno giocato insieme <strong>${mate.games}</strong> volt${mate.games===1?'a':'e'} nella stessa squadra: <strong style="color:var(--field-deep)">${mate.w} vinte</strong>, <strong style="color:var(--red-deep)">${mate.l} perse</strong> — ${Math.round(mate.w/mate.games*100)}% di vittorie in coppia.</p>`
-      : `<p class="muted">Non hanno mai giocato nella stessa squadra.</p>` }
+      : `<p class="muted">Non hanno mai giocato nella stessa squadra in questo periodo.</p>` }
   </section>`;
 
   const ctxCard = `<section class="card">
     <h2>In generale</h2>
-    <p class="muted">Statistiche complessive dei due giocatori (tutti i tempi).</p>
+    <p class="muted">Statistiche complessive dei due giocatori nel periodo (${periodLabel()}).</p>
     ${cmpRow("Elo", sx.elo, sy.elo)}
     ${cmpRow("Partite totali", sx.g, sy.g)}
     ${cmpRow("% vittorie", Math.round(sx.pct*100)+"%", Math.round(sy.pct*100)+"%")}
@@ -1174,11 +1228,11 @@ function compareBody(x, y){
 /* ===== Confronto coppia vs coppia ===== */
 const pkey = (x,y)=>[x,y].sort().join("|");
 // Statistiche di tutte le coppie su tutti i tempi (con affiatamento)
-function pairStatsAll(){
+function pairStatsAll(ms0=state.matches){
   const rating={}, pairs={};
   const R=id=>(rating[id]??(rating[id]=1000,1000));
   const PR=(x,y)=>{const k=pkey(x,y); return pairs[k]||(pairs[k]={g:0,w:0,l:0,affSum:0});};
-  const ms=state.matches.slice().sort((a,b)=>(a.date===b.date?a.ts-b.ts:a.date.localeCompare(b.date)));
+  const ms=ms0.slice().sort((a,b)=>(a.date===b.date?a.ts-b.ts:a.date.localeCompare(b.date)));
   for(const m of ms){
     const [a1,a2]=m.a,[b1,b2]=m.b;
     const avgA=(R(a1)+R(a2))/2,avgB=(R(b1)+R(b2))/2;
@@ -1191,9 +1245,9 @@ function pairStatsAll(){
   return pairs;
 }
 // Scontri diretti tra due coppie: partite in cui le due coppie erano le due squadre
-function pairDirect(a1,a2,b1,b2){
+function pairDirect(a1,a2,b1,b2, ms=state.matches){
   const r={games:0,aW:0,bW:0,aG:0,bG:0,matches:[]};
-  for(const m of state.matches){
+  for(const m of ms){
     const aOnA=m.a.includes(a1)&&m.a.includes(a2), aOnB=m.b.includes(a1)&&m.b.includes(a2);
     const bOnA=m.a.includes(b1)&&m.a.includes(b2), bOnB=m.b.includes(b1)&&m.b.includes(b2);
     let aG,bG;
@@ -1207,8 +1261,9 @@ function pairDirect(a1,a2,b1,b2){
   return r;
 }
 function pairCompareBody(a1,a2,b1,b2){
-  const d=pairDirect(a1,a2,b1,b2);
-  const ps=pairStatsAll();
+  const ms=cmpMatches();
+  const d=pairDirect(a1,a2,b1,b2,ms);
+  const ps=pairStatsAll(ms);
   const sa=ps[pkey(a1,a2)]||{g:0,w:0,l:0,affSum:0};
   const sb=ps[pkey(b1,b2)]||{g:0,w:0,l:0,affSum:0};
   const affA=sa.g?Math.round(sa.affSum/sa.g*100):0, affB=sb.g?Math.round(sb.affSum/sb.g*100):0;
@@ -1221,19 +1276,19 @@ function pairCompareBody(a1,a2,b1,b2){
   const h2hCard=`<section class="card">
     <div class="vs-head"><span class="pn a">${nameA}</span><span class="vsbadge">VS</span><span class="pn b">${nameB}</span></div>
     ${ d.games ? `
-      <p class="muted" style="text-align:center">${d.games} scontr${d.games===1?'o':'i'} dirett${d.games===1?'o':'i'} tra le due coppie</p>
+      <p class="muted" style="text-align:center">${d.games} scontr${d.games===1?'o':'i'} dirett${d.games===1?'o':'i'} tra le due coppie · ${periodLabel()}</p>
       <div class="vs-score"><span class="big a">${d.aW}</span><span class="dash">–</span><span class="big b">${d.bW}</span></div>
       <div class="vs-bar"><div class="a" style="width:${aW}%"></div><div class="b" style="width:${100-aW}%"></div></div>
       ${cmpRow("Vittorie", d.aW, d.bW)}
       ${cmpRow("% vittorie", apct+"%", bpct+"%")}
       ${cmpRow("Reti fatte", d.aG, d.bG)}
       ${cmpRow("Media reti", aAvg, bAvg)}
-    ` : `<div class="empty"><div class="big">Mai sfidate</div><p>Queste due coppie non si sono mai affrontate come squadre complete.</p></div>` }
+    ` : `<div class="empty"><div class="big">Mai sfidate</div><p>Nel periodo selezionato (${periodLabel()}) queste due coppie non si sono affrontate come squadre complete.</p></div>` }
   </section>`;
 
   const ctxCard=`<section class="card">
     <h2>Ogni coppia in generale</h2>
-    <p class="muted">Rendimento complessivo di ciascuna coppia, con tutti i compagni d'avventura (tutti i tempi).</p>
+    <p class="muted">Rendimento complessivo di ciascuna coppia, con tutti i compagni d'avventura (${periodLabel()}).</p>
     ${cmpRow("Partite insieme", sa.g, sb.g)}
     ${cmpRow("Vinte–Perse", sa.w+"–"+sa.l, sb.w+"–"+sb.l)}
     ${cmpRow("% vittorie", (sa.g?Math.round(sa.w/sa.g*100):0)+"%", (sb.g?Math.round(sb.w/sb.g*100):0)+"%")}
@@ -1279,11 +1334,12 @@ function renderCompare(){
     <section class="card">
       <h2>Confronto</h2>
       ${modeBtns}
-      <p class="muted">Scegli due giocatori: scontri diretti, resa da compagni e statistiche a confronto (tutti i tempi).</p>
+      <p class="muted">Scegli due giocatori: scontri diretti, resa da compagni e statistiche a confronto.</p>
       <div class="cmp-selects">
         <select class="player" id="cmpSelA">${opt(cmpA)}</select>
         <select class="player" id="cmpSelB">${opt(cmpB)}</select>
       </div>
+      ${periodControls()}
     </section>
     ${ (cmpA && cmpB && cmpA!==cmpB) ? compareBody(cmpA,cmpB)
        : `<section class="card"><div class="empty"><p>Scegli due giocatori diversi per vedere il confronto.</p></div></section>` }`;
@@ -1302,13 +1358,14 @@ function renderCompare(){
       <section class="card">
         <h2>Confronto</h2>
         ${modeBtns}
-        <p class="muted">Scegli i due giocatori di ciascuna coppia: scontri diretti tra le coppie e le loro statistiche (tutti i tempi).</p>
+        <p class="muted">Scegli i due giocatori di ciascuna coppia: scontri diretti tra le coppie e le loro statistiche.</p>
         <div class="pair-pick a"><span class="plabel">Coppia A</span>
           <div class="prow2"><select class="player" id="cpA1">${opt(cpA1)}</select><select class="player" id="cpA2">${opt(cpA2)}</select></div>
         </div>
         <div class="pair-pick b"><span class="plabel">Coppia B</span>
           <div class="prow2"><select class="player" id="cpB1">${opt(cpB1)}</select><select class="player" id="cpB2">${opt(cpB2)}</select></div>
         </div>
+        ${periodControls()}
       </section>
       ${ distinct ? pairCompareBody(cpA1,cpA2,cpB1,cpB2)
          : `<section class="card"><div class="empty"><p>Scegli quattro giocatori diversi (due per coppia).</p></div></section>` }`;
@@ -1322,6 +1379,7 @@ function renderCompare(){
     }
   }
   document.querySelectorAll(".cmode").forEach(b=>b.addEventListener("click", ()=>{ cmpMode=b.dataset.mode; renderCompare(); }));
+  wirePeriod();
 }
 
 function renderMvp(){
