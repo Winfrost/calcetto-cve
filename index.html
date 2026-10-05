@@ -235,6 +235,15 @@
   .honor .hitem small{font-size:11px;color:var(--ink-soft);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
 
   /* ---------- CONFRONTO ---------- */
+  .cmp-mode{display:inline-flex;gap:4px;background:#eef1ea;border-radius:999px;padding:4px;margin:0 0 14px}
+  .cmode{border:0;background:transparent;font-family:inherit;font-weight:700;font-size:13px;color:var(--ink-soft);padding:7px 18px;border-radius:999px;cursor:pointer;transition:.15s}
+  .cmode.on{background:var(--ink);color:#fff}
+  .pair-pick{display:flex;flex-direction:column;gap:7px;margin-bottom:10px}
+  .pair-pick .plabel{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+  .pair-pick.a .plabel{color:var(--field-deep)}
+  .pair-pick.b .plabel{color:var(--blue-deep)}
+  .pair-pick .prow2{display:flex;gap:10px}
+  .pair-pick .prow2 select.player{flex:1;min-width:110px}
   .cmp-selects{display:flex;gap:10px;flex-wrap:wrap}
   .cmp-selects select.player{flex:1;min-width:140px}
   .vs-head{display:flex;align-items:center;justify-content:center;gap:14px;margin:2px 0}
@@ -564,6 +573,8 @@ function ghPushSoon(){
 let state = {players:[],matches:[],votes:[]};
 let view = "play";
 let cmpA = "", cmpB = ""; // giocatori selezionati nel Confronto
+let cmpMode = "player";   // "player" | "pair"
+let cpA1="", cpA2="", cpB1="", cpB2=""; // coppie selezionate nel Confronto
 let season = String(new Date().getFullYear()); // default: anno in corso (Elo azzerato ogni anno)
 let showProvisional = false; // provvisori nascosti di default
 const K = 28;            // sensibilità Elo
@@ -1160,34 +1171,157 @@ function compareBody(x, y){
 
   return h2hCard + mateCard + ctxCard + listCard;
 }
+/* ===== Confronto coppia vs coppia ===== */
+const pkey = (x,y)=>[x,y].sort().join("|");
+// Statistiche di tutte le coppie su tutti i tempi (con affiatamento)
+function pairStatsAll(){
+  const rating={}, pairs={};
+  const R=id=>(rating[id]??(rating[id]=1000,1000));
+  const PR=(x,y)=>{const k=pkey(x,y); return pairs[k]||(pairs[k]={g:0,w:0,l:0,affSum:0});};
+  const ms=state.matches.slice().sort((a,b)=>(a.date===b.date?a.ts-b.ts:a.date.localeCompare(b.date)));
+  for(const m of ms){
+    const [a1,a2]=m.a,[b1,b2]=m.b;
+    const avgA=(R(a1)+R(a2))/2,avgB=(R(b1)+R(b2))/2;
+    const eA=1/(1+Math.pow(10,(avgB-avgA)/400)),eB=1-eA;
+    let sA; if(m.sa>m.sb)sA=1; else if(m.sa<m.sb)sA=0; else sA=0.5; const sB=1-sA;
+    rating[a1]=R(a1)+K*(sA-eA);rating[a2]=R(a2)+K*(sA-eA);rating[b1]=R(b1)+K*(sB-eB);rating[b2]=R(b2)+K*(sB-eB);
+    const prA=PR(a1,a2); prA.g++; sA>0.5?prA.w++:(sA<0.5?prA.l++:0); prA.affSum+=(sA-eA);
+    const prB=PR(b1,b2); prB.g++; sB>0.5?prB.w++:(sB<0.5?prB.l++:0); prB.affSum+=(sB-eB);
+  }
+  return pairs;
+}
+// Scontri diretti tra due coppie: partite in cui le due coppie erano le due squadre
+function pairDirect(a1,a2,b1,b2){
+  const r={games:0,aW:0,bW:0,aG:0,bG:0,matches:[]};
+  for(const m of state.matches){
+    const aOnA=m.a.includes(a1)&&m.a.includes(a2), aOnB=m.b.includes(a1)&&m.b.includes(a2);
+    const bOnA=m.a.includes(b1)&&m.a.includes(b2), bOnB=m.b.includes(b1)&&m.b.includes(b2);
+    let aG,bG;
+    if(aOnA&&bOnB){ aG=m.sa; bG=m.sb; }
+    else if(aOnB&&bOnA){ aG=m.sb; bG=m.sa; }
+    else continue;
+    r.games++; r.aG+=aG; r.bG+=bG;
+    if(aG>bG) r.aW++; else r.bW++;
+    r.matches.push({m,aG,bG});
+  }
+  return r;
+}
+function pairCompareBody(a1,a2,b1,b2){
+  const d=pairDirect(a1,a2,b1,b2);
+  const ps=pairStatsAll();
+  const sa=ps[pkey(a1,a2)]||{g:0,w:0,l:0,affSum:0};
+  const sb=ps[pkey(b1,b2)]||{g:0,w:0,l:0,affSum:0};
+  const affA=sa.g?Math.round(sa.affSum/sa.g*100):0, affB=sb.g?Math.round(sb.affSum/sb.g*100):0;
+  const nameA=`${esc(nameOf(a1))} + ${esc(nameOf(a2))}`, nameB=`${esc(nameOf(b1))} + ${esc(nameOf(b2))}`;
+  const aW=d.games?Math.round(d.aW/d.games*100):50;
+  const apct=d.games?Math.round(d.aW/d.games*100):0, bpct=d.games?Math.round(d.bW/d.games*100):0;
+  const aAvg=d.games?(d.aG/d.games).toFixed(1):"0", bAvg=d.games?(d.bG/d.games).toFixed(1):"0";
+  const sign=v=>(v>0?"+":"")+v;
+
+  const h2hCard=`<section class="card">
+    <div class="vs-head"><span class="pn a">${nameA}</span><span class="vsbadge">VS</span><span class="pn b">${nameB}</span></div>
+    ${ d.games ? `
+      <p class="muted" style="text-align:center">${d.games} scontr${d.games===1?'o':'i'} dirett${d.games===1?'o':'i'} tra le due coppie</p>
+      <div class="vs-score"><span class="big a">${d.aW}</span><span class="dash">–</span><span class="big b">${d.bW}</span></div>
+      <div class="vs-bar"><div class="a" style="width:${aW}%"></div><div class="b" style="width:${100-aW}%"></div></div>
+      ${cmpRow("Vittorie", d.aW, d.bW)}
+      ${cmpRow("% vittorie", apct+"%", bpct+"%")}
+      ${cmpRow("Reti fatte", d.aG, d.bG)}
+      ${cmpRow("Media reti", aAvg, bAvg)}
+    ` : `<div class="empty"><div class="big">Mai sfidate</div><p>Queste due coppie non si sono mai affrontate come squadre complete.</p></div>` }
+  </section>`;
+
+  const ctxCard=`<section class="card">
+    <h2>Ogni coppia in generale</h2>
+    <p class="muted">Rendimento complessivo di ciascuna coppia, con tutti i compagni d'avventura (tutti i tempi).</p>
+    ${cmpRow("Partite insieme", sa.g, sb.g)}
+    ${cmpRow("Vinte–Perse", sa.w+"–"+sa.l, sb.w+"–"+sb.l)}
+    ${cmpRow("% vittorie", (sa.g?Math.round(sa.w/sa.g*100):0)+"%", (sb.g?Math.round(sb.w/sb.g*100):0)+"%")}
+    ${cmpRow("Affiatamento", sign(affA), sign(affB))}
+  </section>`;
+
+  const list=d.matches.slice().reverse().map(({m,aG,bG})=>{
+    const aWon=aG>bG;
+    return `<div class="mrow h2h">
+      <span class="mdate">${m.date}</span>
+      <div class="mteams">
+        <span><strong style="color:var(--field-deep)">${nameA}</strong></span>
+        <span style="color:var(--ink-soft)">vs</span>
+        <span><strong style="color:var(--blue-deep)">${nameB}</strong></span>
+      </div>
+      <span class="mscore"><span style="${aWon?'color:var(--field-deep)':''}">${aG}</span>–<span style="${!aWon?'color:var(--blue-deep)':''}">${bG}</span></span>
+    </div>`;
+  }).join("");
+  const listCard=d.games?`<section class="card"><h2>Storico scontri diretti</h2>${list}</section>`:"";
+
+  return h2hCard + ctxCard + listCard;
+}
+
 function renderCompare(){
   if(state.players.length<2){
     return emptyState("Servono almeno 2 giocatori","Aggiungi qualche giocatore per poterli confrontare.");
   }
-  // default: i due in testa alla classifica di tutti i tempi
-  if(!cmpA || !cmpB || cmpA===cmpB){
-    const rk = soloRankFrom(state.matches);
-    const ids = rk.length>=2 ? rk.map(s=>s.id) : state.players.map(p=>p.id);
-    if(!cmpA) cmpA = ids[0] || state.players[0].id;
-    if(!cmpB || cmpB===cmpA) cmpB = ids.find(id=>id!==cmpA) || state.players.find(p=>p.id!==cmpA)?.id || "";
-  }
   const sorted = state.players.slice().sort((a,b)=>a.name.localeCompare(b.name));
   const opt = sel => sorted.map(p=>`<option value="${p.id}" ${p.id===sel?"selected":""}>${esc(p.name)}</option>`).join("");
+  const modeBtns = `<div class="cmp-mode">
+      <button class="cmode ${cmpMode==='player'?'on':''}" data-mode="player">Giocatori</button>
+      <button class="cmode ${cmpMode==='pair'?'on':''}" data-mode="pair">Coppie</button>
+    </div>`;
 
-  views.innerHTML = `
-  <section class="card">
-    <h2>Confronto</h2>
-    <p class="muted">Scegli due giocatori: scontri diretti, resa da compagni e statistiche a confronto (tutti i tempi).</p>
-    <div class="cmp-selects">
-      <select class="player" id="cmpSelA">${opt(cmpA)}</select>
-      <select class="player" id="cmpSelB">${opt(cmpB)}</select>
-    </div>
-  </section>
-  ${ (cmpA && cmpB && cmpA!==cmpB) ? compareBody(cmpA,cmpB)
-     : `<section class="card"><div class="empty"><p>Scegli due giocatori diversi per vedere il confronto.</p></div></section>` }`;
-
-  document.getElementById("cmpSelA").addEventListener("change", e=>{ cmpA=e.target.value; renderCompare(); });
-  document.getElementById("cmpSelB").addEventListener("change", e=>{ cmpB=e.target.value; renderCompare(); });
+  if(cmpMode==="player"){
+    if(!cmpA || !cmpB || cmpA===cmpB){
+      const rk = soloRankFrom(state.matches);
+      const ids = rk.length>=2 ? rk.map(s=>s.id) : state.players.map(p=>p.id);
+      if(!cmpA) cmpA = ids[0] || state.players[0].id;
+      if(!cmpB || cmpB===cmpA) cmpB = ids.find(id=>id!==cmpA) || state.players.find(p=>p.id!==cmpA)?.id || "";
+    }
+    views.innerHTML = `
+    <section class="card">
+      <h2>Confronto</h2>
+      ${modeBtns}
+      <p class="muted">Scegli due giocatori: scontri diretti, resa da compagni e statistiche a confronto (tutti i tempi).</p>
+      <div class="cmp-selects">
+        <select class="player" id="cmpSelA">${opt(cmpA)}</select>
+        <select class="player" id="cmpSelB">${opt(cmpB)}</select>
+      </div>
+    </section>
+    ${ (cmpA && cmpB && cmpA!==cmpB) ? compareBody(cmpA,cmpB)
+       : `<section class="card"><div class="empty"><p>Scegli due giocatori diversi per vedere il confronto.</p></div></section>` }`;
+    document.getElementById("cmpSelA").addEventListener("change", e=>{ cmpA=e.target.value; renderCompare(); });
+    document.getElementById("cmpSelB").addEventListener("change", e=>{ cmpB=e.target.value; renderCompare(); });
+  } else {
+    if(state.players.length<4){
+      views.innerHTML = `<section class="card"><h2>Confronto</h2>${modeBtns}
+        <div class="empty"><div class="big">Servono almeno 4 giocatori</div><p>Per confrontare due coppie servono quattro giocatori diversi.</p></div></section>`;
+    } else {
+      const rk=soloRankFrom(state.matches); const ids=rk.length>=4?rk.map(s=>s.id):state.players.map(p=>p.id);
+      if(!cpA1) cpA1=ids[0]; if(!cpA2) cpA2=ids[1]; if(!cpB1) cpB1=ids[2]; if(!cpB2) cpB2=ids[3];
+      const four=[cpA1,cpA2,cpB1,cpB2];
+      const distinct = four.every(Boolean) && new Set(four).size===4;
+      views.innerHTML = `
+      <section class="card">
+        <h2>Confronto</h2>
+        ${modeBtns}
+        <p class="muted">Scegli i due giocatori di ciascuna coppia: scontri diretti tra le coppie e le loro statistiche (tutti i tempi).</p>
+        <div class="pair-pick a"><span class="plabel">Coppia A</span>
+          <div class="prow2"><select class="player" id="cpA1">${opt(cpA1)}</select><select class="player" id="cpA2">${opt(cpA2)}</select></div>
+        </div>
+        <div class="pair-pick b"><span class="plabel">Coppia B</span>
+          <div class="prow2"><select class="player" id="cpB1">${opt(cpB1)}</select><select class="player" id="cpB2">${opt(cpB2)}</select></div>
+        </div>
+      </section>
+      ${ distinct ? pairCompareBody(cpA1,cpA2,cpB1,cpB2)
+         : `<section class="card"><div class="empty"><p>Scegli quattro giocatori diversi (due per coppia).</p></div></section>` }`;
+      ["cpA1","cpA2","cpB1","cpB2"].forEach(id=>{
+        document.getElementById(id).addEventListener("change", e=>{
+          if(id==="cpA1")cpA1=e.target.value; else if(id==="cpA2")cpA2=e.target.value;
+          else if(id==="cpB1")cpB1=e.target.value; else cpB2=e.target.value;
+          renderCompare();
+        });
+      });
+    }
+  }
+  document.querySelectorAll(".cmode").forEach(b=>b.addEventListener("click", ()=>{ cmpMode=b.dataset.mode; renderCompare(); }));
 }
 
 function renderMvp(){
