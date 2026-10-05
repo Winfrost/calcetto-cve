@@ -234,6 +234,30 @@
   .honor .hitem .em{font-size:22px}
   .honor .hitem small{font-size:11px;color:var(--ink-soft);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
 
+  /* ---------- CONFRONTO ---------- */
+  .cmp-selects{display:flex;gap:10px;flex-wrap:wrap}
+  .cmp-selects select.player{flex:1;min-width:140px}
+  .vs-head{display:flex;align-items:center;justify-content:center;gap:14px;margin:2px 0}
+  .vs-head .pn{font-family:"Anton",sans-serif;font-size:clamp(16px,4vw,22px);text-align:center;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vs-head .pn.a{color:var(--field-deep)}
+  .vs-head .pn.b{color:var(--blue-deep)}
+  .vs-head .vsbadge{font-family:"Anton",sans-serif;color:var(--ink-soft);font-size:14px;flex:0 0 auto}
+  .vs-score{display:flex;align-items:center;justify-content:center;gap:18px;margin:12px 0 2px}
+  .vs-score .big{font-family:"Anton",sans-serif;font-size:46px;line-height:1;font-variant-numeric:tabular-nums}
+  .vs-score .big.a{color:var(--field-deep)}
+  .vs-score .big.b{color:var(--blue-deep)}
+  .vs-score .dash{color:var(--ink-soft);font-size:26px}
+  .vs-bar{display:flex;height:12px;border-radius:99px;overflow:hidden;background:#eceee7;margin:4px 0 16px}
+  .vs-bar .a{background:var(--field)}
+  .vs-bar .b{background:var(--blue)}
+  .cmp-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .cmp-row:last-child{border-bottom:0}
+  .cmp-row .cv{font-weight:800;font-variant-numeric:tabular-nums;font-size:16px}
+  .cmp-row .cv.a{text-align:right;color:var(--field-deep)}
+  .cmp-row .cv.b{text-align:left;color:var(--blue-deep)}
+  .cmp-row .cl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);font-weight:700;text-align:center;white-space:nowrap}
+  .mrow.h2h{grid-template-columns:auto 1fr auto}
+
   /* ---------- MVP ---------- */
   .vote-grid{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 4px}
   .vote-chip{font-family:inherit;font-weight:600;font-size:15px;color:var(--ink);background:#fff;
@@ -330,6 +354,7 @@
     <button class="tab" role="tab" data-view="play" aria-selected="true">Nuova partita</button>
     <button class="tab" role="tab" data-view="solo" aria-selected="false">Classifica</button>
     <button class="tab" role="tab" data-view="pairs" aria-selected="false">Coppie</button>
+    <button class="tab" role="tab" data-view="compare" aria-selected="false">Confronto</button>
     <button class="tab" role="tab" data-view="mvp" aria-selected="false">MVP</button>
     <button class="tab" role="tab" data-view="trophies" aria-selected="false">Albo d'oro</button>
     <button class="tab" role="tab" data-view="atp" aria-selected="false">Ranking ATP</button>
@@ -538,6 +563,7 @@ function ghPushSoon(){
    ========================================================= */
 let state = {players:[],matches:[],votes:[]};
 let view = "play";
+let cmpA = "", cmpB = ""; // giocatori selezionati nel Confronto
 let season = String(new Date().getFullYear()); // default: anno in corso (Elo azzerato ogni anno)
 let showProvisional = false; // provvisori nascosti di default
 const K = 28;            // sensibilità Elo
@@ -859,6 +885,7 @@ function render(){
   if(view==="play") return renderPlay();
   if(view==="solo") return renderSolo();
   if(view==="pairs") return renderPairs();
+  if(view==="compare") return renderCompare();
   if(view==="mvp") return renderMvp();
   if(view==="trophies") return renderTrophies();
   if(view==="atp") return renderAtp();
@@ -1043,6 +1070,124 @@ function renderPairs(){
   </section>`;
   wireMinControl();
   wireProvToggle();
+}
+
+/* ===== Confronto testa a testa tra due giocatori (tutti i tempi) ===== */
+function headToHead(x, y){
+  const opp={games:0, xW:0, yW:0, xG:0, yG:0, matches:[]};
+  const mate={games:0, w:0, l:0};
+  for(const m of state.matches){
+    const xa=m.a.includes(x), xb=m.b.includes(x);
+    const ya=m.a.includes(y), yb=m.b.includes(y);
+    if(!(xa||xb) || !(ya||yb)) continue;
+    if((xa&&ya)||(xb&&yb)){
+      // stessa squadra = compagni
+      mate.games++;
+      const won = (xa&&ya) ? m.sa>m.sb : m.sb>m.sa;
+      won ? mate.w++ : mate.l++;
+    } else {
+      // squadre opposte = scontro diretto
+      opp.games++;
+      const xG = xa ? m.sa : m.sb;
+      const yG = xa ? m.sb : m.sa;
+      opp.xG+=xG; opp.yG+=yG;
+      if(xG>yG) opp.xW++; else opp.yW++;
+      opp.matches.push({m, xG, yG});
+    }
+  }
+  return {opp, mate};
+}
+function cmpRow(label, a, b){
+  return `<div class="cmp-row"><span class="cv a">${a}</span><span class="cl">${label}</span><span class="cv b">${b}</span></div>`;
+}
+function compareBody(x, y){
+  const {opp, mate} = headToHead(x, y);
+  const all = soloRankFrom(state.matches);
+  const sx = all.find(s=>s.id===x) || {elo:1000,g:0,w:0,l:0,pct:0};
+  const sy = all.find(s=>s.id===y) || {elo:1000,g:0,w:0,l:0,pct:0};
+  const nx = esc(nameOf(x)), ny = esc(nameOf(y));
+
+  const xpct = opp.games? Math.round(opp.xW/opp.games*100):0;
+  const ypct = opp.games? Math.round(opp.yW/opp.games*100):0;
+  const aW = opp.games? Math.round(opp.xW/opp.games*100):50;
+  const xAvg = opp.games? (opp.xG/opp.games).toFixed(1):"0";
+  const yAvg = opp.games? (opp.yG/opp.games).toFixed(1):"0";
+
+  const h2hCard = `<section class="card">
+    <div class="vs-head"><span class="pn a">${nx}</span><span class="vsbadge">VS</span><span class="pn b">${ny}</span></div>
+    ${ opp.games ? `
+      <p class="muted" style="text-align:center">${opp.games} scontr${opp.games===1?'o':'i'} dirett${opp.games===1?'o':'i'} — da avversari</p>
+      <div class="vs-score"><span class="big a">${opp.xW}</span><span class="dash">–</span><span class="big b">${opp.yW}</span></div>
+      <div class="vs-bar"><div class="a" style="width:${aW}%"></div><div class="b" style="width:${100-aW}%"></div></div>
+      ${cmpRow("Vittorie", opp.xW, opp.yW)}
+      ${cmpRow("% vittorie", xpct+"%", ypct+"%")}
+      ${cmpRow("Reti fatte", opp.xG, opp.yG)}
+      ${cmpRow("Media reti", xAvg, yAvg)}
+    ` : `<div class="empty"><div class="big">Mai sfidati da avversari</div><p>${nx} e ${ny} non si sono ancora affrontati in squadre opposte.</p></div>` }
+  </section>`;
+
+  const mateCard = `<section class="card">
+    <h2>Da compagni</h2>
+    ${ mate.games
+      ? `<p class="muted">Hanno giocato insieme <strong>${mate.games}</strong> volt${mate.games===1?'a':'e'} nella stessa squadra: <strong style="color:var(--field-deep)">${mate.w} vinte</strong>, <strong style="color:var(--red-deep)">${mate.l} perse</strong> — ${Math.round(mate.w/mate.games*100)}% di vittorie in coppia.</p>`
+      : `<p class="muted">Non hanno mai giocato nella stessa squadra.</p>` }
+  </section>`;
+
+  const ctxCard = `<section class="card">
+    <h2>In generale</h2>
+    <p class="muted">Statistiche complessive dei due giocatori (tutti i tempi).</p>
+    ${cmpRow("Elo", sx.elo, sy.elo)}
+    ${cmpRow("Partite totali", sx.g, sy.g)}
+    ${cmpRow("% vittorie", Math.round(sx.pct*100)+"%", Math.round(sy.pct*100)+"%")}
+  </section>`;
+
+  const list = opp.matches.slice().reverse().map(({m,xG,yG})=>{
+    const xWon = xG>yG;
+    const xTeam = m.a.includes(x)? m.a : m.b;
+    const yTeam = m.a.includes(y)? m.a : m.b;
+    const pills = (ids,hi,color)=> ids.map(id=> id===hi?`<strong style="color:${color}">${esc(nameOf(id))}</strong>`:esc(nameOf(id))).join(" · ");
+    return `<div class="mrow h2h">
+      <span class="mdate">${m.date}</span>
+      <div class="mteams">
+        <span>${pills(xTeam,x,'var(--field-deep)')}</span>
+        <span style="color:var(--ink-soft)">vs</span>
+        <span>${pills(yTeam,y,'var(--blue-deep)')}</span>
+      </div>
+      <span class="mscore"><span style="${xWon?'color:var(--field-deep)':''}">${xG}</span>–<span style="${!xWon?'color:var(--blue-deep)':''}">${yG}</span></span>
+    </div>`;
+  }).join("");
+  const listCard = opp.games ? `<section class="card"><h2>Storico scontri diretti</h2>${list}</section>` : "";
+
+  return h2hCard + mateCard + ctxCard + listCard;
+}
+function renderCompare(){
+  if(state.players.length<2){
+    return emptyState("Servono almeno 2 giocatori","Aggiungi qualche giocatore per poterli confrontare.");
+  }
+  // default: i due in testa alla classifica di tutti i tempi
+  if(!cmpA || !cmpB || cmpA===cmpB){
+    const rk = soloRankFrom(state.matches);
+    const ids = rk.length>=2 ? rk.map(s=>s.id) : state.players.map(p=>p.id);
+    if(!cmpA) cmpA = ids[0] || state.players[0].id;
+    if(!cmpB || cmpB===cmpA) cmpB = ids.find(id=>id!==cmpA) || state.players.find(p=>p.id!==cmpA)?.id || "";
+  }
+  const sorted = state.players.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const opt = sel => sorted.map(p=>`<option value="${p.id}" ${p.id===sel?"selected":""}>${esc(p.name)}</option>`).join("");
+
+  views.innerHTML = `
+  <section class="card">
+    <h2>Confronto</h2>
+    <p class="muted">Scegli due giocatori: scontri diretti, resa da compagni e statistiche a confronto (tutti i tempi).</p>
+    <div class="cmp-selects">
+      <select class="player" id="cmpSelA">${opt(cmpA)}</select>
+      <select class="player" id="cmpSelB">${opt(cmpB)}</select>
+    </div>
+  </section>
+  ${ (cmpA && cmpB && cmpA!==cmpB) ? compareBody(cmpA,cmpB)
+     : `<section class="card"><div class="empty"><p>Scegli due giocatori diversi per vedere il confronto.</p></div></section>` }`;
+
+  document.getElementById("cmpSelA").addEventListener("change", e=>{ cmpA=e.target.value; renderCompare(); });
+  document.getElementById("cmpSelB").addEventListener("change", e=>{ cmpB=e.target.value; renderCompare(); });
 }
 
 function renderMvp(){
