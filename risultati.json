@@ -4309,7 +4309,7 @@
     }
   ],
   "settings": {
-    "minSolo": 1,
+    "minSolo": 8,
     "minPair": 2
   }
 }
