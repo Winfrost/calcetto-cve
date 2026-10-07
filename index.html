@@ -149,6 +149,35 @@
   .avatar.lg.fallback{font-size:30px}
   .avatar.sm{width:34px;height:34px}
   .avatar.lg{width:88px;height:88px}
+  .avatar.xl{width:120px;height:120px;border-width:3px}
+  .name-cell.clk{cursor:pointer}
+  .name-cell.clk:hover > span{text-decoration:underline;text-decoration-color:var(--line)}
+
+  /* ---------- PROFILO ---------- */
+  .profile-hero{text-align:center}
+  .prof-select{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+  .prof-name{font-family:"Anton",sans-serif;font-size:clamp(26px,6vw,40px);line-height:1;margin:12px 0 4px}
+  .prof-sub{color:var(--ink-soft);font-weight:700}
+  .prof-troph{margin-top:14px;display:flex;justify-content:center}
+  .prof-troph .trophy{font-size:20px}
+  .prof-troph .trophy b{font-size:16px}
+  .prof-troph .scu{width:20px;height:24px}
+  .prof-troph .tpill{font-size:13px}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:12px}
+  .stat{background:#f7f8f4;border:1px solid var(--line);border-radius:12px;padding:14px 10px;text-align:center}
+  .stat .sv{font-family:"Anton",sans-serif;font-size:28px;line-height:1;font-variant-numeric:tabular-nums}
+  .stat .sl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);font-weight:700;margin-top:7px}
+  .stat.good .sv{color:var(--field-deep)}
+  .stat.bad .sv{color:var(--red-deep)}
+  .form-dots{display:inline-flex;gap:6px;flex-wrap:wrap}
+  .fdot{width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:12px}
+  .fdot.w{background:var(--field)}
+  .fdot.l{background:var(--red)}
+  .rival{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .rival:last-child{border-bottom:0}
+  .rival .rl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);font-weight:700;width:120px;flex:0 0 auto}
+  .rival .rn{flex:1;font-weight:700}
+  .rival .rv{font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink-soft)}
   .name-cell{display:inline-flex;align-items:center;gap:9px}
   .name-cell > span{display:inline-flex;align-items:center;flex-wrap:wrap;gap:2px 6px}
 
@@ -592,6 +621,7 @@ let cmpA = "", cmpB = ""; // giocatori selezionati nel Confronto
 let cmpMode = "player";   // "player" | "pair"
 let cpA1="", cpA2="", cpB1="", cpB2=""; // coppie selezionate nel Confronto
 let cmpPeriod = {type:"all", month:"", tour:"", from:"", to:""}; // filtro temporale del Confronto
+let profileId = ""; // giocatore mostrato nella scheda profilo
 let season = String(new Date().getFullYear()); // default: anno in corso (Elo azzerato ogni anno)
 let showProvisional = false; // provvisori nascosti di default
 const K = 28;            // sensibilità Elo
@@ -676,7 +706,7 @@ function avatarHtml(name, cls=""){
   let h=7; for(const c of (name||"")) h=(h*31+c.charCodeAt(0))>>>0; const hue=h%360;
   return `<span class="avatar fallback ${cls}" style="background:hsl(${hue} 42% 55%)">${esc(init)}</span>`;
 }
-function nameWithAvatar(id, after=""){ return `<span class="name-cell">${avatarHtml(nameOf(id))}<span>${esc(nameOf(id))}${after}</span></span>`; }
+function nameWithAvatar(id, after=""){ return `<span class="name-cell clk" onclick="openProfile('${id}')">${avatarHtml(nameOf(id))}<span>${esc(nameOf(id))}${after}</span></span>`; }
 
 const monthKey = d => (d||"").slice(0,7);
 const monthLabel = ym => {
@@ -939,6 +969,7 @@ function render(){
   if(view==="trophies") return renderTrophies();
   if(view==="atp") return renderAtp();
   if(view==="players") return renderPlayers();
+  if(view==="profile") return renderProfile();
   if(view==="history") return renderHistory();
   if(view==="data") return renderData();
 }
@@ -1641,8 +1672,7 @@ function renderPlayers(){
         const st = statById[p.id];
         const meta = st ? `${st.g} partite · Elo ${st.elo}` : "nessuna partita";
         return `<div class="prow" data-id="${p.id}">
-          ${avatarHtml(p.name)}
-          <span class="pn">${esc(p.name)}</span>
+          <span class="name-cell clk" style="flex:1" onclick="openProfile('${p.id}')">${avatarHtml(p.name)}<span class="pn">${esc(p.name)}</span></span>
           <span class="pmeta">${meta}</span>
           <button class="icon-btn ren" title="Rinomina">✎</button>
           <button class="icon-btn del" title="Elimina">🗑</button>
@@ -1687,6 +1717,130 @@ function renderPlayers(){
       }
     });
   });
+}
+
+function renderProfile(){
+  if(state.players.length===0){ return emptyState("Nessun giocatore","Aggiungi dei giocatori per vedere le schede."); }
+  if(!profileId || !byId(profileId)){ const r=soloRankFrom(state.matches); profileId=(r[0]&&r[0].id)||state.players[0].id; }
+  const id=profileId, name=nameOf(id);
+
+  // statistiche di tutti i tempi
+  const allRank=soloRankFrom(state.matches);
+  const pos=allRank.findIndex(x=>x.id===id);
+  const s=allRank[pos]||{g:0,w:0,l:0,elo:1000,pct:0,diff:0,gf:0,ga:0};
+  const curY=String(new Date().getFullYear());
+  const sy=soloRankFrom(state.matches.filter(m=>(m.date||"").slice(0,4)===curY)).find(x=>x.id===id);
+
+  // trofei
+  const troph=computeTrophies()[id]||{gold:0,silver:0,bronze:0,scu1:0,scu2:0,scu3:0,slam:0,m1000:0,m500:0};
+
+  // ATP
+  const atp=computeAtp(); const api=atp.findIndex(x=>x.pid===id); const ar=atp[api];
+  const atpPts=ar?ar.points:0;
+  const slamW=ar?ar.det.filter(d=>d.tier==="slam"&&d.pos===1).length:0;
+
+  // MVP di tutti i tempi
+  const byDate={};
+  (state.votes||[]).forEach(v=>{ (byDate[v.date]=byDate[v.date]||{}); byDate[v.date][v.pid]=(byDate[v.date][v.pid]||0)+1; });
+  let mvpT=0, mvpV=0;
+  Object.values(byDate).forEach(t=>{ const vals=Object.values(t); const mx=vals.length?Math.max(...vals):0; const mine=t[id]||0; if(mine>0){ mvpV+=mine; if(mine===mx) mvpT++; } });
+
+  // rivalità (compagni e avversari)
+  const partners={}, rivals={};
+  for(const m of state.matches){
+    const inA=m.a.includes(id), inB=m.b.includes(id);
+    if(!inA&&!inB) continue;
+    const myTeam=inA?m.a:m.b, oppTeam=inA?m.b:m.a;
+    const won=inA? m.sa>m.sb : m.sb>m.sa;
+    const partner=myTeam.find(p=>p!==id);
+    if(partner){ const pr=partners[partner]||(partners[partner]={g:0,w:0}); pr.g++; if(won)pr.w++; }
+    oppTeam.forEach(o=>{ const rv=rivals[o]||(rivals[o]={g:0,w:0}); rv.g++; if(won)rv.w++; });
+  }
+  const bestMate=Object.entries(partners).filter(([,v])=>v.g>=3).sort((a,b)=>(b[1].w/b[1].g)-(a[1].w/a[1].g)||b[1].g-a[1].g)[0];
+  const rivalArr=Object.entries(rivals).filter(([,v])=>v.g>=3);
+  const nemesis=rivalArr.slice().sort((a,b)=>(a[1].w/a[1].g)-(b[1].w/b[1].g)||b[1].g-a[1].g)[0];
+  const victim =rivalArr.slice().sort((a,b)=>(b[1].w/b[1].g)-(a[1].w/a[1].g)||b[1].g-a[1].g)[0];
+
+  // forma recente
+  const mine=state.matches.filter(m=>m.a.includes(id)||m.b.includes(id)).slice().sort((a,b)=>(a.date===b.date?a.ts-b.ts:a.date.localeCompare(b.date)));
+  const last=mine.slice(-8);
+  const dots=last.length ? last.map(m=>{ const inA=m.a.includes(id); const won=inA?m.sa>m.sb:m.sb>m.sa; return `<span class="fdot ${won?'w':'l'}" title="${m.date}">${won?'V':'S'}</span>`; }).join("") : `<span class="muted">Nessuna partita.</span>`;
+
+  // palmarès in grande
+  const pItems=[];
+  if(troph.scu1) pItems.push(`<span class="hitem">${scudettoSvg(SCU_GOLD)}${troph.scu1}<small>scudetto</small></span>`);
+  if(troph.slam) pItems.push(`<span class="hitem"><span class="em">🏆</span>${troph.slam}<small>slam</small></span>`);
+  if(troph.scu2) pItems.push(`<span class="hitem">${scudettoSvg(SCU_SILVER)}${troph.scu2}<small>2º anno</small></span>`);
+  if(troph.scu3) pItems.push(`<span class="hitem">${scudettoSvg(SCU_BRONZE)}${troph.scu3}<small>3º anno</small></span>`);
+  if(troph.m1000) pItems.push(`<span class="hitem"><span class="tpill t1000">1000</span>${troph.m1000}<small>master 1000</small></span>`);
+  if(troph.m500) pItems.push(`<span class="hitem"><span class="tpill t500">500</span>${troph.m500}<small>master 500</small></span>`);
+  if(troph.gold) pItems.push(`<span class="hitem"><span class="em">🥇</span>${troph.gold}<small>oro mese</small></span>`);
+  if(troph.silver) pItems.push(`<span class="hitem"><span class="em">🥈</span>${troph.silver}<small>argento mese</small></span>`);
+  if(troph.bronze) pItems.push(`<span class="hitem"><span class="em">🥉</span>${troph.bronze}<small>bronzo mese</small></span>`);
+  if(mvpT) pItems.push(`<span class="hitem"><span class="em">⭐</span>${mvpT}<small>MVP del giorno</small></span>`);
+
+  const posTxt = pos>=0 ? `#${pos+1} di tutti i tempi` : "nessuna partita giocata";
+  const rivalRow=(label,ent)=>{
+    if(!ent) return `<div class="rival"><span class="rl">${label}</span><span class="rn muted" style="margin:0">dati insufficienti</span></div>`;
+    const [oid,v]=ent; const pctv=Math.round(v.w/v.g*100);
+    return `<div class="rival"><span class="rl">${label}</span>${avatarHtml(nameOf(oid),'sm')}<span class="rn">${esc(nameOf(oid))}</span><span class="rv">${pctv}% · ${v.g} g</span></div>`;
+  };
+  const sel = state.players.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<option value="${p.id}" ${p.id===id?"selected":""}>${esc(p.name)}</option>`).join("");
+
+  views.innerHTML = `
+  <section class="card profile-hero">
+    <div class="prof-select">
+      <button class="btn ghost small" onclick="go('players')">← Giocatori</button>
+      <select class="player" id="profSel" style="flex:1;min-width:160px">${sel}</select>
+    </div>
+    ${avatarHtml(name,'xl')}
+    <div class="prof-name">${esc(name)}</div>
+    <div class="prof-sub">${pos>=0?`Elo ${s.elo} · ${posTxt}`:posTxt}</div>
+    ${ trophyBadges(troph) ? `<div class="prof-troph">${trophyBadges(troph)}</div>` : "" }
+  </section>
+
+  <section class="card">
+    <h2>Statistiche</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="sv">${s.g}</div><div class="sl">Partite</div></div>
+      <div class="stat good"><div class="sv">${s.w}</div><div class="sl">Vittorie</div></div>
+      <div class="stat bad"><div class="sv">${s.l}</div><div class="sl">Sconfitte</div></div>
+      <div class="stat"><div class="sv">${s.g?Math.round(s.pct*100):0}%</div><div class="sl">% Vittorie</div></div>
+      <div class="stat"><div class="sv">${s.elo}</div><div class="sl">Elo (sempre)</div></div>
+      <div class="stat"><div class="sv">${sy?sy.elo:'—'}</div><div class="sl">Elo ${curY}</div></div>
+      <div class="stat"><div class="sv">${s.gf||0}</div><div class="sl">Reti fatte</div></div>
+      <div class="stat"><div class="sv">${s.ga||0}</div><div class="sl">Reti subite</div></div>
+      <div class="stat"><div class="sv">${(s.diff>0?'+':'')+(s.diff||0)}</div><div class="sl">Differenza</div></div>
+    </div>
+    <p class="muted" style="margin:16px 0 0">Forma recente: <span class="form-dots" style="vertical-align:middle">${dots}</span></p>
+  </section>
+
+  <section class="card">
+    <h2>Palmarès</h2>
+    ${ pItems.length ? `<div class="honor" style="border:0;padding:0"><span class="hset">${pItems.join("")}</span></div>`
+      : `<p class="muted">Ancora nessun trofeo. Vinci mesi, tornei e MVP per riempire la bacheca!</p>` }
+  </section>
+
+  <section class="card">
+    <h2>Ranking & MVP</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="sv">${atpPts}</div><div class="sl">Punti ATP</div></div>
+      <div class="stat"><div class="sv">${api>=0?'#'+(api+1):'—'}</div><div class="sl">Pos. ATP</div></div>
+      <div class="stat"><div class="sv">${slamW||0}</div><div class="sl">Slam vinti</div></div>
+      <div class="stat"><div class="sv">${mvpT}</div><div class="sl">MVP del giorno</div></div>
+      <div class="stat"><div class="sv">${mvpV}</div><div class="sl">Voti MVP ricevuti</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Rivalità</h2>
+    ${rivalRow("Compagno top", bestMate)}
+    ${rivalRow("Vittima preferita", victim)}
+    ${rivalRow("Bestia nera", nemesis)}
+    <p class="hint">Calcolato su chi ha giocato almeno 3 volte con o contro ${esc((name||"").split(' ')[0])}.</p>
+  </section>`;
+
+  document.getElementById("profSel").addEventListener("change", e=>{ profileId=e.target.value; render(); });
 }
 
 function renderHistory(){
@@ -2036,6 +2190,7 @@ function wireModal(){
 }
 
 function go(v){ view=v; render(); }
+function openProfile(id){ profileId=id; view="profile"; render(); window.scrollTo(0,0); }
 document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>go(t.dataset.view)));
 document.getElementById("season").addEventListener("change", e=>{ season=e.target.value; render(); });
 
