@@ -808,6 +808,9 @@ function compute(){
 
 // Classifica individuale calcolata su un sottoinsieme di partite (per i mini-campionati)
 function soloRankFrom(ms){
+  // l'Elo dipende dall'ordine delle partite: le processo sempre in ordine cronologico
+  // (stesso ordine della classifica), così medaglie, profili e ATP restano coerenti
+  ms = ms.slice().sort((a,b)=> (a.date===b.date ? (a.ts||0)-(b.ts||0) : (a.date||"").localeCompare(b.date||"")));
   const rating={}, ps={};
   const R = id => (rating[id] ?? (rating[id]=1000,1000));
   const P = id => ps[id] || (ps[id]={id,g:0,w:0,l:0,gf:0,ga:0});
