@@ -173,6 +173,9 @@
   .fdot{width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:12px}
   .fdot.w{background:var(--field)}
   .fdot.l{background:var(--red)}
+  .elochart{width:100%;height:auto;display:block;overflow:visible}
+  .rec-note{display:flex;flex-wrap:wrap;gap:8px 18px;margin:14px 0 0;font-size:14px;color:var(--ink-soft)}
+  .rec-note b{color:var(--ink)}
   .rival{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
   .rival:last-child{border-bottom:0}
   .rival .rl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);font-weight:700;width:120px;flex:0 0 auto}
@@ -827,6 +830,69 @@ function soloRankFrom(ms){
   }
   return Object.values(ps).map(s=>({...s, elo:Math.round(rating[s.id]), pct:s.g?s.w/s.g:0, diff:s.gf-s.ga}))
     .sort((x,y)=> y.elo-x.elo || y.pct-x.pct || y.diff-x.diff);
+}
+
+// Cronologia Elo (continua, di tutti i tempi) + partite del giocatore in ordine cronologico.
+function eloTimelineFor(id){
+  const ms = state.matches.slice().sort((a,b)=> (a.date===b.date ? (a.ts||0)-(b.ts||0) : (a.date||"").localeCompare(b.date||"")));
+  const rating={}; const R=x=>(rating[x]??(rating[x]=1000,1000));
+  const series=[], games=[];
+  for(const m of ms){
+    const [a1,a2]=m.a,[b1,b2]=m.b;
+    const avgA=(R(a1)+R(a2))/2, avgB=(R(b1)+R(b2))/2;
+    const eA=1/(1+Math.pow(10,(avgB-avgA)/400)), eB=1-eA;
+    let sA; if(m.sa>m.sb)sA=1; else if(m.sa<m.sb)sA=0; else sA=0.5; const sB=1-sA;
+    rating[a1]=R(a1)+K*(sA-eA); rating[a2]=R(a2)+K*(sA-eA);
+    rating[b1]=R(b1)+K*(sB-eB); rating[b2]=R(b2)+K*(sB-eB);
+    const inA=m.a.includes(id), inB=m.b.includes(id);
+    if(inA||inB){
+      const elo=Math.round(rating[id]);
+      const gf=inA?m.sa:m.sb, ga=inA?m.sb:m.sa;
+      series.push(elo);
+      games.push({date:m.date, elo, gf, ga, won:gf>ga, draw:gf===ga, opp:(inA?m.b:m.a).slice()});
+    }
+  }
+  return {series, games};
+}
+
+// Streak e record dalle partite (già in ordine cronologico).
+function streakRecords(games){
+  let bestW=0,bestL=0,runW=0,runL=0, shutoutW=0, biggestWin=null, biggestLoss=null, topGf=null;
+  for(const g of games){
+    if(g.won){ runW++; runL=0; if(runW>bestW)bestW=runW; if(g.ga===0) shutoutW++;
+      const mrg=g.gf-g.ga; if(!biggestWin||mrg>biggestWin.m) biggestWin={m:mrg,g}; }
+    else if(g.draw){ runW=0; runL=0; }
+    else { runL++; runW=0; if(runL>bestL)bestL=runL;
+      const mrg=g.ga-g.gf; if(!biggestLoss||mrg>biggestLoss.m) biggestLoss={m:mrg,g}; }
+    if(!topGf||g.gf>topGf.gf) topGf=g;
+  }
+  let ct=null,cc=0;
+  for(let i=games.length-1;i>=0;i--){ const g=games[i]; if(g.draw) break; if(ct===null){ct=g.won;cc=1;} else if(g.won===ct) cc++; else break; }
+  return {bestW,bestL,shutoutW,biggestWin,biggestLoss,topGf,curWon:ct,curCount:cc};
+}
+
+// Grafico a linea dell'andamento Elo (SVG inline, nessuna libreria).
+function eloChartSvg(series){
+  if(!series || series.length<2) return `<p class="muted" style="margin:0">Servono almeno 2 partite per disegnare l'andamento.</p>`;
+  const W=640,H=170,padX=10,padT=16,padB=16;
+  const min=Math.min(...series), max=Math.max(...series), range=(max-min)||1, n=series.length;
+  const X=i=> padX + (W-2*padX)*(n===1?0:i/(n-1));
+  const Y=v=> padT + (H-padT-padB)*(1-(v-min)/range);
+  const pts=series.map((v,i)=>[X(i),Y(v)]);
+  const line=pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");
+  const area=line+` L ${X(n-1).toFixed(1)} ${(H-padB).toFixed(1)} L ${X(0).toFixed(1)} ${(H-padB).toFixed(1)} Z`;
+  const up=series[n-1]>=series[0], col=up?"#1c8049":"#e23b3b";
+  const base=(1000>=min&&1000<=max)?`<line x1="${padX}" x2="${W-padX}" y1="${Y(1000).toFixed(1)}" y2="${Y(1000).toFixed(1)}" stroke="#c9cfc3" stroke-width="1" stroke-dasharray="4 5"/>`:"";
+  const lp=pts[n-1];
+  return `<svg class="elochart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Andamento Elo">
+    <defs><linearGradient id="elofill" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="${col}" stop-opacity="0.16"/><stop offset="1" stop-color="${col}" stop-opacity="0"/>
+    </linearGradient></defs>
+    ${base}
+    <path d="${area}" fill="url(#elofill)"/>
+    <path d="${line}" fill="none" stroke="${col}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${lp[0].toFixed(1)}" cy="${lp[1].toFixed(1)}" r="4.5" fill="${col}"/>
+  </svg>`;
 }
 
 // Trofei: coppe per i mesi conclusi (1º/2º/3º), scudetto per gli anni conclusi (1º).
@@ -1798,6 +1864,15 @@ function renderProfile(){
   const last=mine.slice(-8);
   const dots=last.length ? last.map(m=>{ const inA=m.a.includes(id); const won=inA?m.sa>m.sb:m.sb>m.sa; return `<span class="fdot ${won?'w':'l'}" title="${m.date}">${won?'V':'S'}</span>`; }).join("") : `<span class="muted">Nessuna partita.</span>`;
 
+  // andamento Elo + streak/record
+  const tl=eloTimelineFor(id);
+  const rec=streakRecords(tl.games);
+  const peakElo = tl.series.length ? Math.max(...tl.series) : s.elo;
+  const lowElo  = tl.series.length ? Math.min(...tl.series) : s.elo;
+  const curStreak = rec.curCount ? `${rec.curCount} ${rec.curWon?"V":"S"}` : "—";
+  const bigWinTxt  = rec.biggestWin  ? `${rec.biggestWin.g.gf}-${rec.biggestWin.g.ga} vs ${esc(rec.biggestWin.g.opp.map(nameOf).join(" & "))}`   : "—";
+  const bigLossTxt = rec.biggestLoss ? `${rec.biggestLoss.g.gf}-${rec.biggestLoss.g.ga} vs ${esc(rec.biggestLoss.g.opp.map(nameOf).join(" & "))}` : "—";
+
   // palmarès in grande
   const pItems=[];
   if(troph.scu1) pItems.push(`<span class="hitem">${scudettoSvg(SCU_GOLD)}${troph.scu1}<small>scudetto</small></span>`);
@@ -1852,6 +1927,28 @@ function renderProfile(){
       <div class="stat"><div class="sv">${(s.diff>0?'+':'')+(s.diff||0)}</div><div class="sl">Differenza</div></div>
     </div>
     <p class="muted" style="margin:16px 0 0">Forma recente: <span class="form-dots" style="vertical-align:middle">${dots}</span></p>
+  </section>
+
+  <section class="card">
+    <h2>Andamento Elo</h2>
+    ${eloChartSvg(tl.series)}
+    <p class="hint">Elo di tutti i tempi, partita dopo partita. La linea tratteggiata è il punto di partenza (1000).</p>
+  </section>
+
+  <section class="card">
+    <h2>Streak & Record</h2>
+    <div class="stat-grid">
+      <div class="stat ${rec.curCount? (rec.curWon?'good':'bad'):''}"><div class="sv">${curStreak}</div><div class="sl">Striscia attuale</div></div>
+      <div class="stat good"><div class="sv">${rec.bestW}</div><div class="sl">Record vittorie</div></div>
+      <div class="stat bad"><div class="sv">${rec.bestL}</div><div class="sl">Record sconfitte</div></div>
+      <div class="stat"><div class="sv">${peakElo}</div><div class="sl">Elo massimo</div></div>
+      <div class="stat"><div class="sv">${lowElo}</div><div class="sl">Elo minimo</div></div>
+      <div class="stat"><div class="sv">${rec.shutoutW}</div><div class="sl">Cappotti inflitti</div></div>
+    </div>
+    <div class="rec-note">
+      <span>🔥 Vittoria più larga: <b>${bigWinTxt}</b></span>
+      <span>💀 Sconfitta più larga: <b>${bigLossTxt}</b></span>
+    </div>
   </section>
 
   <section class="card">
