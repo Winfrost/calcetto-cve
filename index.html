@@ -1772,8 +1772,8 @@ function renderProfile(){
   let mvpT=0, mvpV=0;
   Object.values(byDate).forEach(t=>{ const vals=Object.values(t); const mx=vals.length?Math.max(...vals):0; const mine=t[id]||0; if(mine>0){ mvpV+=mine; if(mine===mx) mvpT++; } });
 
-  // rivalità (compagni e avversari)
-  const partners={}, rivals={};
+  // rivalità (compagni e avversari, singoli e coppie)
+  const partners={}, rivals={}, rivalPairs={};
   for(const m of state.matches){
     const inA=m.a.includes(id), inB=m.b.includes(id);
     if(!inA&&!inB) continue;
@@ -1782,11 +1782,16 @@ function renderProfile(){
     const partner=myTeam.find(p=>p!==id);
     if(partner){ const pr=partners[partner]||(partners[partner]={g:0,w:0}); pr.g++; if(won)pr.w++; }
     oppTeam.forEach(o=>{ const rv=rivals[o]||(rivals[o]={g:0,w:0}); rv.g++; if(won)rv.w++; });
+    if(oppTeam.length===2 && oppTeam[0]!==oppTeam[1]){
+      const ids=[...oppTeam].sort(); const key=ids.join("|");
+      const rp=rivalPairs[key]||(rivalPairs[key]={ids,g:0,w:0}); rp.g++; if(won)rp.w++;
+    }
   }
   const bestMate=Object.entries(partners).filter(([,v])=>v.g>=3).sort((a,b)=>(b[1].w/b[1].g)-(a[1].w/a[1].g)||b[1].g-a[1].g)[0];
   const rivalArr=Object.entries(rivals).filter(([,v])=>v.g>=3);
   const nemesis=rivalArr.slice().sort((a,b)=>(a[1].w/a[1].g)-(b[1].w/b[1].g)||b[1].g-a[1].g)[0];
   const victim =rivalArr.slice().sort((a,b)=>(b[1].w/b[1].g)-(a[1].w/a[1].g)||b[1].g-a[1].g)[0];
+  const nemesisPair=Object.values(rivalPairs).filter(v=>v.g>=3).sort((a,b)=>(a.w/a.g)-(b.w/b.g)||b.g-a.g)[0];
 
   // forma recente
   const mine=state.matches.filter(m=>m.a.includes(id)||m.b.includes(id)).slice().sort((a,b)=>(a.date===b.date?a.ts-b.ts:a.date.localeCompare(b.date)));
@@ -1811,6 +1816,13 @@ function renderProfile(){
     if(!ent) return `<div class="rival"><span class="rl">${label}</span><span class="rn muted" style="margin:0">dati insufficienti</span></div>`;
     const [oid,v]=ent; const pctv=Math.round(v.w/v.g*100);
     return `<div class="rival"><span class="rl">${label}</span>${avatarHtml(nameOf(oid),'sm')}<span class="rn">${esc(nameOf(oid))}</span><span class="rv">${pctv}% · ${v.g} g</span></div>`;
+  };
+  const pairRow=(label,v)=>{
+    if(!v) return `<div class="rival"><span class="rl">${label}</span><span class="rn muted" style="margin:0">dati insufficienti</span></div>`;
+    const pctv=Math.round(v.w/v.g*100);
+    const avs=v.ids.map(oid=>avatarHtml(nameOf(oid),'sm')).join("");
+    const names=v.ids.map(oid=>esc(nameOf(oid))).join(" & ");
+    return `<div class="rival"><span class="rl">${label}</span>${avs}<span class="rn">${names}</span><span class="rv">${pctv}% · ${v.g} g</span></div>`;
   };
   const sel = state.players.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<option value="${p.id}" ${p.id===id?"selected":""}>${esc(p.name)}</option>`).join("");
 
@@ -1864,7 +1876,8 @@ function renderProfile(){
     ${rivalRow("Compagno top", bestMate)}
     ${rivalRow("Vittima preferita", victim)}
     ${rivalRow("Bestia nera", nemesis)}
-    <p class="hint">Calcolato su chi ha giocato almeno 3 volte con o contro ${esc((name||"").split(' ')[0])}.</p>
+    ${pairRow("Coppia bestia nera", nemesisPair)}
+    <p class="hint">Calcolato su chi ha giocato almeno 3 volte con o contro ${esc((name||"").split(' ')[0])}. La percentuale è quella di ${esc((name||"").split(' ')[0])}.</p>
   </section>`;
 
   document.getElementById("profSel").addEventListener("change", e=>{ profileId=e.target.value; render(); });
