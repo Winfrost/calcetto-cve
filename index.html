@@ -625,6 +625,7 @@ let cmpMode = "player";   // "player" | "pair"
 let cpA1="", cpA2="", cpB1="", cpB2=""; // coppie selezionate nel Confronto
 let cmpPeriod = {type:"all", month:"", tour:"", from:"", to:""}; // filtro temporale del Confronto
 let profPeriod = {type:"all", month:"", tour:"", from:"", to:""}; // filtro temporale del grafico Elo nel Profilo
+let profMate = ""; // compagno scelto nel profilo per la "coppia bestia nera"
 let profileId = ""; // giocatore mostrato nella scheda profilo
 let season = String(new Date().getFullYear()); // default: anno in corso (Elo azzerato ogni anno)
 let showProvisional = false; // provvisori nascosti di default
@@ -860,18 +861,18 @@ function eloTimelineFor(id, base){
 
 // Streak e record dalle partite (già in ordine cronologico).
 function streakRecords(games){
-  let bestW=0,bestL=0,runW=0,runL=0, shutoutW=0, biggestWin=null, biggestLoss=null, topGf=null;
+  let bestW=0,bestL=0,runW=0,runL=0, shutoutW=0, shutoutL=0, biggestWin=null, biggestLoss=null, topGf=null;
   for(const g of games){
     if(g.won){ runW++; runL=0; if(runW>bestW)bestW=runW; if(g.ga===0) shutoutW++;
       const mrg=g.gf-g.ga; if(!biggestWin||mrg>biggestWin.m) biggestWin={m:mrg,g}; }
     else if(g.draw){ runW=0; runL=0; }
-    else { runL++; runW=0; if(runL>bestL)bestL=runL;
+    else { runL++; runW=0; if(runL>bestL)bestL=runL; if(g.gf===0) shutoutL++;
       const mrg=g.ga-g.gf; if(!biggestLoss||mrg>biggestLoss.m) biggestLoss={m:mrg,g}; }
     if(!topGf||g.gf>topGf.gf) topGf=g;
   }
   let ct=null,cc=0;
   for(let i=games.length-1;i>=0;i--){ const g=games[i]; if(g.draw) break; if(ct===null){ct=g.won;cc=1;} else if(g.won===ct) cc++; else break; }
-  return {bestW,bestL,shutoutW,biggestWin,biggestLoss,topGf,curWon:ct,curCount:cc};
+  return {bestW,bestL,shutoutW,shutoutL,biggestWin,biggestLoss,topGf,curWon:ct,curCount:cc};
 }
 
 // Grafico a linea dell'andamento Elo (SVG inline, nessuna libreria).
@@ -1897,6 +1898,13 @@ function renderProfile(){
   const victim =rivalArr.slice().sort((a,b)=>(b[1].w/b[1].g)-(a[1].w/a[1].g)||b[1].g-a[1].g)[0];
   const nemesisPair=Object.values(rivalPairs).filter(v=>v.g>=3).sort((a,b)=>(a.w/a.g)-(b.w/b.g)||b.g-a.g)[0];
 
+  // coppia con un compagno scelto -> sua bestia nera
+  const otherPlayers = state.players.filter(p=>p.id!==id);
+  if(!profMate || profMate===id || !byId(profMate)) profMate = (bestMate && bestMate[0]) || (otherPlayers[0] && otherPlayers[0].id) || "";
+  const mateSel = otherPlayers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<option value="${p.id}" ${p.id===profMate?"selected":""}>${esc(p.name)}</option>`).join("");
+  const pairNem = profMate ? pairNemesis(id, profMate, state.matches) : null;
+  const pairStat = profMate ? (pairStatsAll(state.matches)[pkey(id,profMate)]||{g:0,w:0,l:0}) : {g:0,w:0,l:0};
+
   // forma recente
   const mine=state.matches.filter(m=>m.a.includes(id)||m.b.includes(id)).slice().sort((a,b)=>(a.date===b.date?a.ts-b.ts:a.date.localeCompare(b.date)));
   const last=mine.slice(-8);
@@ -1986,6 +1994,7 @@ function renderProfile(){
       <div class="stat"><div class="sv">${peakElo}</div><div class="sl">Elo massimo</div></div>
       <div class="stat"><div class="sv">${lowElo}</div><div class="sl">Elo minimo</div></div>
       <div class="stat"><div class="sv">${rec.shutoutW}</div><div class="sl">Cappotti inflitti</div></div>
+      <div class="stat"><div class="sv">${rec.shutoutL}</div><div class="sl">Cappotti subiti</div></div>
     </div>
     <div class="rec-note">
       <span>🔥 Vittoria più larga: <b>${bigWinTxt}</b></span>
@@ -2017,9 +2026,18 @@ function renderProfile(){
     ${rivalRow("Bestia nera", nemesis)}
     ${pairRow("Coppia bestia nera", nemesisPair)}
     <p class="hint">Calcolato su chi ha giocato almeno 3 volte con o contro ${esc((name||"").split(' ')[0])}. La percentuale è quella di ${esc((name||"").split(' ')[0])}.</p>
-  </section>`;
+  </section>
+
+  ${ otherPlayers.length ? `<section class="card">
+    <h2>In coppia con…</h2>
+    <div class="cmp-period"><span class="pplabel">Compagno</span><select class="player" id="profMateSel">${mateSel}</select></div>
+    <p class="muted" style="margin:14px 0 0">${ pairStat.g ? `Insieme: <strong>${pairStat.w}–${pairStat.l}</strong> · ${Math.round(pairStat.w/pairStat.g*100)}% su ${pairStat.g} partite` : "Non avete ancora giocato insieme." }</p>
+    ${pairRow("Bestia nera della coppia", pairNem)}
+    <p class="hint">Il duo avversario contro cui questa coppia perde di più (almeno 3 sfide contro lo stesso duo).</p>
+  </section>` : "" }`;
 
   document.getElementById("profSel").addEventListener("change", e=>{ profileId=e.target.value; render(); });
+  const ms2=document.getElementById("profMateSel"); if(ms2) ms2.addEventListener("change", e=>{ profMate=e.target.value; renderProfile(); });
   wirePeriodFor(profPeriod,"profP",renderProfile);
 }
 
