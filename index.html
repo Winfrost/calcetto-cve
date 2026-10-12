@@ -624,6 +624,7 @@ let cmpA = "", cmpB = ""; // giocatori selezionati nel Confronto
 let cmpMode = "player";   // "player" | "pair"
 let cpA1="", cpA2="", cpB1="", cpB2=""; // coppie selezionate nel Confronto
 let cmpPeriod = {type:"all", month:"", tour:"", from:"", to:""}; // filtro temporale del Confronto
+let profPeriod = {type:"all", month:"", tour:"", from:"", to:""}; // filtro temporale del grafico Elo nel Profilo
 let profileId = ""; // giocatore mostrato nella scheda profilo
 let season = String(new Date().getFullYear()); // default: anno in corso (Elo azzerato ogni anno)
 let showProvisional = false; // provvisori nascosti di default
@@ -832,9 +833,11 @@ function soloRankFrom(ms){
     .sort((x,y)=> y.elo-x.elo || y.pct-x.pct || y.diff-x.diff);
 }
 
-// Cronologia Elo (continua, di tutti i tempi) + partite del giocatore in ordine cronologico.
-function eloTimelineFor(id){
-  const ms = state.matches.slice().sort((a,b)=> (a.date===b.date ? (a.ts||0)-(b.ts||0) : (a.date||"").localeCompare(b.date||"")));
+// Cronologia Elo + partite del giocatore in ordine cronologico.
+// Senza 'base' usa tutte le partite (Elo continuo di sempre). Con 'base' (un sottoinsieme,
+// es. un mese o un torneo) l'Elo riparte da 1000 dentro quel periodo.
+function eloTimelineFor(id, base){
+  const ms = (base||state.matches).slice().sort((a,b)=> (a.date===b.date ? (a.ts||0)-(b.ts||0) : (a.date||"").localeCompare(b.date||"")));
   const rating={}; const R=x=>(rating[x]??(rating[x]=1000,1000));
   const series=[], games=[];
   for(const m of ms){
@@ -1245,51 +1248,70 @@ function renderPairs(){
   wireProvToggle();
 }
 
-/* ===== Filtro temporale del Confronto ===== */
-function cmpMatches(){
-  const p=cmpPeriod;
-  let ms=state.matches;
+/* ===== Filtro temporale (riusabile: Confronto e Profilo) ===== */
+function matchesForPeriod(p, base){
+  let ms=base||state.matches;
   if(p.type==="month" && p.month) ms=ms.filter(m=>monthKey(m.date)===p.month);
   else if(p.type==="tour" && p.tour){ const [y,idx]=p.tour.split("#"); ms=ms.filter(m=>(m.date||"").slice(0,4)===y && tournamentForDate(m.date)===+idx); }
   else if(p.type==="dates"){ if(p.from) ms=ms.filter(m=>m.date>=p.from); if(p.to) ms=ms.filter(m=>m.date<=p.to); }
   return ms;
 }
-function periodLabel(){
-  const p=cmpPeriod;
+function cmpMatches(){ return matchesForPeriod(cmpPeriod); }
+function periodLabelFor(p){
   if(p.type==="month" && p.month) return monthLabel(p.month);
   if(p.type==="tour" && p.tour){ const [y,idx]=p.tour.split("#"); return `${TOURNAMENTS[+idx]?.name||"Torneo"} ${y}`; }
   if(p.type==="dates" && (p.from||p.to)) return `${p.from||"inizio"} → ${p.to||"oggi"}`;
   return "tutti i tempi";
 }
-function periodControls(){
+function periodLabel(){ return periodLabelFor(cmpPeriod); }
+function periodControlsFor(p, pre){
   const months=[...new Set(state.matches.map(m=>monthKey(m.date)).filter(Boolean))].sort().reverse();
   const groups=tournamentGroups().map(g=>({val:`${g.year}#${g.idx}`, label:`${TOURNAMENTS[g.idx].name} ${g.year}`, sort:`${g.year}-${TOURNAMENTS[g.idx].from}`})).sort((a,b)=>b.sort.localeCompare(a.sort));
   const typeOpt=[["all","Tutti i tempi"],["month","Per mese"],["tour","Per torneo"],["dates","Date personalizzate"]]
-    .map(([v,l])=>`<option value="${v}" ${cmpPeriod.type===v?"selected":""}>${l}</option>`).join("");
+    .map(([v,l])=>`<option value="${v}" ${p.type===v?"selected":""}>${l}</option>`).join("");
   let extra="";
-  if(cmpPeriod.type==="month"){
-    extra=`<select class="player" id="cmpPMonth">${months.length?months.map(m=>`<option value="${m}" ${cmpPeriod.month===m?"selected":""}>${monthLabel(m)}</option>`).join(""):`<option value="">nessun mese</option>`}</select>`;
-  } else if(cmpPeriod.type==="tour"){
-    extra=`<select class="player" id="cmpPTour">${groups.length?groups.map(g=>`<option value="${g.val}" ${cmpPeriod.tour===g.val?"selected":""}>${esc(g.label)}</option>`).join(""):`<option value="">nessun torneo giocato</option>`}</select>`;
-  } else if(cmpPeriod.type==="dates"){
-    extra=`<input type="date" id="cmpPFrom" value="${cmpPeriod.from}"><span class="pdash">→</span><input type="date" id="cmpPTo" value="${cmpPeriod.to}">`;
+  if(p.type==="month"){
+    extra=`<select class="player" id="${pre}Month">${months.length?months.map(m=>`<option value="${m}" ${p.month===m?"selected":""}>${monthLabel(m)}</option>`).join(""):`<option value="">nessun mese</option>`}</select>`;
+  } else if(p.type==="tour"){
+    extra=`<select class="player" id="${pre}Tour">${groups.length?groups.map(g=>`<option value="${g.val}" ${p.tour===g.val?"selected":""}>${esc(g.label)}</option>`).join(""):`<option value="">nessun torneo giocato</option>`}</select>`;
+  } else if(p.type==="dates"){
+    extra=`<input type="date" id="${pre}From" value="${p.from}"><span class="pdash">→</span><input type="date" id="${pre}To" value="${p.to}">`;
   }
-  return `<div class="cmp-period"><span class="pplabel">Periodo</span><select class="player" id="cmpPType">${typeOpt}</select>${extra}</div>`;
+  return `<div class="cmp-period"><span class="pplabel">Periodo</span><select class="player" id="${pre}Type">${typeOpt}</select>${extra}</div>`;
 }
-function wirePeriod(){
-  const t=document.getElementById("cmpPType"); if(!t) return;
+function periodControls(){ return periodControlsFor(cmpPeriod,"cmpP"); }
+function wirePeriodFor(p, pre, cb){
+  const t=document.getElementById(pre+"Type"); if(!t) return;
   const months=[...new Set(state.matches.map(m=>monthKey(m.date)).filter(Boolean))].sort().reverse();
   const gsorted=tournamentGroups().map(g=>({val:`${g.year}#${g.idx}`, sort:`${g.year}-${TOURNAMENTS[g.idx].from}`})).sort((a,b)=>b.sort.localeCompare(a.sort));
   t.addEventListener("change", e=>{
-    cmpPeriod.type=e.target.value;
-    if(cmpPeriod.type==="month" && !cmpPeriod.month) cmpPeriod.month=months[0]||"";
-    if(cmpPeriod.type==="tour" && !cmpPeriod.tour) cmpPeriod.tour=gsorted[0]?.val||"";
-    renderCompare();
+    p.type=e.target.value;
+    if(p.type==="month" && !p.month) p.month=months[0]||"";
+    if(p.type==="tour" && !p.tour) p.tour=gsorted[0]?.val||"";
+    cb();
   });
-  const mo=document.getElementById("cmpPMonth"); if(mo) mo.addEventListener("change", e=>{ cmpPeriod.month=e.target.value; renderCompare(); });
-  const tr=document.getElementById("cmpPTour"); if(tr) tr.addEventListener("change", e=>{ cmpPeriod.tour=e.target.value; renderCompare(); });
-  const fr=document.getElementById("cmpPFrom"); if(fr) fr.addEventListener("change", e=>{ cmpPeriod.from=e.target.value; renderCompare(); });
-  const tt=document.getElementById("cmpPTo");   if(tt) tt.addEventListener("change", e=>{ cmpPeriod.to=e.target.value; renderCompare(); });
+  const mo=document.getElementById(pre+"Month"); if(mo) mo.addEventListener("change", e=>{ p.month=e.target.value; cb(); });
+  const tr=document.getElementById(pre+"Tour"); if(tr) tr.addEventListener("change", e=>{ p.tour=e.target.value; cb(); });
+  const fr=document.getElementById(pre+"From"); if(fr) fr.addEventListener("change", e=>{ p.from=e.target.value; cb(); });
+  const tt=document.getElementById(pre+"To");   if(tt) tt.addEventListener("change", e=>{ p.to=e.target.value; cb(); });
+}
+function wirePeriod(){ wirePeriodFor(cmpPeriod,"cmpP",renderCompare); }
+
+// Coppia bestia nera DI una coppia: il duo avversario contro cui (p1,p2) insieme perde di piu'.
+function pairNemesis(p1,p2, ms){
+  ms=ms||state.matches;
+  const opp={};
+  for(const m of ms){
+    const inA=m.a.includes(p1)&&m.a.includes(p2);
+    const inB=m.b.includes(p1)&&m.b.includes(p2);
+    if(!inA&&!inB) continue;
+    const oppTeam=inA?m.b:m.a;
+    if(oppTeam.length!==2 || oppTeam[0]===oppTeam[1]) continue;
+    const won=inA? m.sa>m.sb : m.sb>m.sa;
+    const ids=[...oppTeam].sort(); const k=ids.join("|");
+    const o=opp[k]||(opp[k]={ids,g:0,w:0}); o.g++; if(won)o.w++;
+  }
+  return Object.values(opp).filter(v=>v.g>=3).sort((a,b)=>(a.w/a.g)-(b.w/b.g)||b.g-a.g)[0];
 }
 
 /* ===== Confronto testa a testa tra due giocatori ===== */
@@ -1465,7 +1487,23 @@ function pairCompareBody(a1,a2,b1,b2){
   }).join("");
   const listCard=d.games?`<section class="card"><h2>Storico scontri diretti</h2>${list}</section>`:"";
 
-  return h2hCard + ctxCard + listCard;
+  const npA=pairNemesis(a1,a2,ms), npB=pairNemesis(b1,b2,ms);
+  const bnRow=(label,v)=>{
+    if(!v) return `<div class="rival"><span class="rl">${label}</span><span class="rn muted" style="margin:0">dati insufficienti</span></div>`;
+    const pct=Math.round(v.w/v.g*100);
+    const avs=v.ids.map(oid=>avatarHtml(nameOf(oid),'sm')).join("");
+    const names=v.ids.map(oid=>esc(nameOf(oid))).join(" & ");
+    return `<div class="rival"><span class="rl">${label}</span>${avs}<span class="rn">${names}</span><span class="rv">${pct}% · ${v.g} g</span></div>`;
+  };
+  const bnCard=`<section class="card">
+    <h2>Coppia bestia nera</h2>
+    <p class="muted">Il duo avversario contro cui ciascuna coppia perde di più (${periodLabel()}).</p>
+    ${bnRow(nameA, npA)}
+    ${bnRow(nameB, npB)}
+    <p class="hint">Calcolata sulle partite in cui la coppia ha giocato unita, almeno 3 volte contro lo stesso duo. La percentuale è della coppia.</p>
+  </section>`;
+
+  return h2hCard + ctxCard + bnCard + listCard;
 }
 
 function renderCompare(){
@@ -1869,6 +1907,9 @@ function renderProfile(){
   const rec=streakRecords(tl.games);
   const peakElo = tl.series.length ? Math.max(...tl.series) : s.elo;
   const lowElo  = tl.series.length ? Math.min(...tl.series) : s.elo;
+  // grafico Elo filtrabile per periodo (mese/torneo/date); su "tutti i tempi" = Elo continuo
+  const tlChart = profPeriod.type==="all" ? tl : eloTimelineFor(id, matchesForPeriod(profPeriod));
+  const chartScopeNote = profPeriod.type==="all" ? "Elo di tutti i tempi, partita dopo partita" : `Elo nel periodo: ${esc(periodLabelFor(profPeriod))} (riparte da 1000)`;
   const curStreak = rec.curCount ? `${rec.curCount} ${rec.curWon?"V":"S"}` : "—";
   const bigWinTxt  = rec.biggestWin  ? `${rec.biggestWin.g.gf}-${rec.biggestWin.g.ga} vs ${esc(rec.biggestWin.g.opp.map(nameOf).join(" & "))}`   : "—";
   const bigLossTxt = rec.biggestLoss ? `${rec.biggestLoss.g.gf}-${rec.biggestLoss.g.ga} vs ${esc(rec.biggestLoss.g.opp.map(nameOf).join(" & "))}` : "—";
@@ -1931,8 +1972,9 @@ function renderProfile(){
 
   <section class="card">
     <h2>Andamento Elo</h2>
-    ${eloChartSvg(tl.series)}
-    <p class="hint">Elo di tutti i tempi, partita dopo partita. La linea tratteggiata è il punto di partenza (1000).</p>
+    ${periodControlsFor(profPeriod,"profP")}
+    ${eloChartSvg(tlChart.series)}
+    <p class="hint">${chartScopeNote}. La linea tratteggiata è il punto di partenza (1000).</p>
   </section>
 
   <section class="card">
@@ -1978,6 +2020,7 @@ function renderProfile(){
   </section>`;
 
   document.getElementById("profSel").addEventListener("change", e=>{ profileId=e.target.value; render(); });
+  wirePeriodFor(profPeriod,"profP",renderProfile);
 }
 
 function renderHistory(){
