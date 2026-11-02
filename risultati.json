@@ -7783,7 +7783,7 @@
     }
   ],
   "settings": {
-    "minSolo": 10,
+    "minSolo": 4,
     "minPair": 10
   }
 }
