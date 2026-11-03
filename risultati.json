@@ -7855,10 +7855,28 @@
       "voterId": "02813665-7962-41fe-9f43-5b37cd373188",
       "pid": "fa921fef-9a7c-454c-b4e6-d9ca6b321948",
       "ts": 1793612058945
+    },
+    {
+      "date": "2026-11-03",
+      "voterId": "9bc3c60c-49d9-40a9-9771-f746be284cd2",
+      "pid": "919a2e8d-6e19-477a-b92f-08b96dbb7bd7",
+      "ts": 1793711232387
+    },
+    {
+      "date": "2026-11-03",
+      "voterId": "2c8b7ecf-7ba0-4d50-9d4f-ec63ebebfadf",
+      "pid": "919a2e8d-6e19-477a-b92f-08b96dbb7bd7",
+      "ts": 1793711255834
+    },
+    {
+      "date": "2026-11-03",
+      "voterId": "88c3df19-7c08-4029-bce6-81f570923613",
+      "pid": "919a2e8d-6e19-477a-b92f-08b96dbb7bd7",
+      "ts": 1793711277871
     }
   ],
   "settings": {
-    "minSolo": 4,
+    "minSolo": 5,
     "minPair": 10
   }
 }
