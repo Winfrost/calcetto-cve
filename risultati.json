@@ -3602,7 +3602,7 @@
     }
   ],
   "settings": {
-    "minSolo": 1,
+    "minSolo": 4,
     "minPair": 10
   }
 }
