@@ -8002,7 +8002,7 @@
     }
   ],
   "settings": {
-    "minSolo": 5,
+    "minSolo": 4,
     "minPair": 10
   }
 }
