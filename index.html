@@ -952,23 +952,64 @@ function trophyBadges(t){
 }
 
 /* ===== Ranking stile ATP: calendario di tornei (periodi), 3 livelli, somma ultimi 12 mesi ===== */
-// Ogni torneo è un PERIODO dell'anno (non tutto il mese). Modificabile: date, livello, nome.
+// Ogni torneo parte da 'from' e dura 'days' GIORNI DI GIOCO (lun-ven, esclusi i festivi italiani):
+// se dentro cadono sabato/domenica o un festivo, la fine si allunga per non perdere giornate.
+// La fine effettiva si calcola per anno (vedi tournamentWindows); 'days' è stato tarato sul 2026.
 const TOURNAMENTS = [
-  { name:"Slam d'Apertura",   tier:"slam",  from:"01-13", to:"01-26" }, // 14 giorni
-  { name:"500 di Febbraio",   tier:"m500",  from:"02-09", to:"02-15" }, //  7
-  { name:"1000 di Marzo",     tier:"m1000", from:"03-02", to:"03-12" }, // 11
-  { name:"500 di fine Marzo", tier:"m500",  from:"03-23", to:"03-28" }, //  6
-  { name:"Slam di Primavera", tier:"slam",  from:"04-13", to:"04-27" }, // 15
-  { name:"500 di Maggio",     tier:"m500",  from:"05-11", to:"05-17" }, //  7
-  { name:"1000 di Giugno",    tier:"m1000", from:"06-01", to:"06-11" }, // 11
-  { name:"Slam d'Estate",     tier:"slam",  from:"07-06", to:"07-19" }, // 14
-  { name:"1000 d'Agosto",     tier:"m1000", from:"08-10", to:"08-20" }, // 11
-  { name:"500 di Settembre",  tier:"m500",  from:"09-01", to:"09-07" }, //  7
-  { name:"Slam d'Autunno",    tier:"slam",  from:"09-22", to:"10-05" }, // 14 (a cavallo)
-  { name:"1000 d'Autunno",    tier:"m1000", from:"10-26", to:"11-04" }, // 10 (a cavallo)
-  { name:"500 di Novembre",   tier:"m500",  from:"11-22", to:"11-28" }, //  7
-  { name:"1000 Finale",       tier:"m1000", from:"12-08", to:"12-16" }, //  9
+  { name:"Slam d'Apertura",   tier:"slam",  from:"01-13", days:10 },
+  { name:"500 di Febbraio",   tier:"m500",  from:"02-09", days:5  },
+  { name:"1000 di Marzo",     tier:"m1000", from:"03-02", days:9  },
+  { name:"500 di fine Marzo", tier:"m500",  from:"03-23", days:5  },
+  { name:"Slam di Primavera", tier:"slam",  from:"04-13", days:11 },
+  { name:"500 di Maggio",     tier:"m500",  from:"05-11", days:5  },
+  { name:"1000 di Giugno",    tier:"m1000", from:"06-01", days:8  },
+  { name:"Slam d'Estate",     tier:"slam",  from:"07-06", days:10 },
+  { name:"1000 d'Agosto",     tier:"m1000", from:"08-10", days:9  },
+  { name:"500 di Settembre",  tier:"m500",  from:"09-01", days:5  },
+  { name:"Slam d'Autunno",    tier:"slam",  from:"09-22", days:10 },
+  { name:"1000 d'Autunno",    tier:"m1000", from:"10-26", days:8  },
+  { name:"500 di Novembre",   tier:"m500",  from:"11-22", days:5  },
+  { name:"1000 Finale",       tier:"m1000", from:"12-08", days:6  },
 ];
+
+// Festività nazionali italiane (giorni in cui "non si gioca"), + Pasquetta (mobile).
+function _easterDate(y){
+  const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,mm=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*mm+114)/31),da=((h+l-7*mm+114)%31)+1;
+  return new Date(y, mo-1, da);
+}
+function italianHolidays(y){
+  const s=new Set(["01-01","01-06","04-25","05-01","06-02","08-15","11-01","12-08","12-25","12-26"]);
+  const mon=_easterDate(y); mon.setDate(mon.getDate()+1); // Lunedì dell'Angelo (Pasquetta)
+  s.add(String(mon.getMonth()+1).padStart(2,"0")+"-"+String(mon.getDate()).padStart(2,"0"));
+  return s;
+}
+function _isPlayDay(dt, hol){ const wd=dt.getDay(); if(wd===0||wd===6) return false; const md=String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0"); return !hol.has(md); }
+
+// Finestre dei tornei per un dato anno: la fine si allunga saltando weekend/festivi
+// finché non copre 'days' giorni di gioco, senza invadere il torneo successivo.
+const _tourWinCache={};
+function tournamentWindows(year){
+  if(_tourWinCache[year]) return _tourWinCache[year];
+  const hol=italianHolidays(year);
+  const mm=dt=>String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+  const startOf=t=>{ const [m,d]=t.from.split("-").map(Number); return new Date(year,m-1,d); };
+  const order=TOURNAMENTS.map((t,idx)=>({idx,from:t.from})).sort((a,b)=>a.from.localeCompare(b.from));
+  const wins=new Array(TOURNAMENTS.length);
+  for(let oi=0; oi<order.length; oi++){
+    const idx=order[oi].idx, t=TOURNAMENTS[idx];
+    const start=startOf(t);
+    let cap; // non superare l'inizio del torneo successivo (altrimenti fine anno)
+    if(oi+1<order.length){ cap=startOf(TOURNAMENTS[order[oi+1].idx]); cap.setDate(cap.getDate()-1); }
+    else cap=new Date(year,11,31);
+    let d=new Date(start), count=0, last=new Date(start);
+    while(d<=cap){
+      if(_isPlayDay(d,hol)){ count++; last=new Date(d); if(count>=t.days) break; }
+      d.setDate(d.getDate()+1);
+    }
+    wins[idx]={ from:t.from, to:mm(count>=t.days?last:cap) };
+  }
+  _tourWinCache[year]=wins; return wins;
+}
 const ATP_POINTS = {
   slam:  [2000,1200,720,360,180,90,45],
   m1000: [1000, 600,360,180, 90,45,25],
@@ -979,8 +1020,10 @@ const TIER_LABEL = { slam:"Grande Slam", m1000:"Master 1000", m500:"Master 500" 
 const ATP_MIN_GAMES = 5; // partite minime nel torneo per prendere punti/titolo
 
 function tournamentForDate(date){
+  const y=+((date||"").slice(0,4)); if(!y) return -1;
   const md=(date||"").slice(5,10); // "MM-DD"
-  for(let i=0;i<TOURNAMENTS.length;i++){ const t=TOURNAMENTS[i]; if(md>=t.from && md<=t.to) return i; }
+  const wins=tournamentWindows(y);
+  for(let i=0;i<wins.length;i++){ const w=wins[i]; if(w && md>=w.from && md<=w.to) return i; }
   return -1; // fuori da ogni torneo (non assegna punti ATP)
 }
 // Raggruppa le partite per istanza di torneo (anno + torneo)
@@ -996,7 +1039,7 @@ function tournamentGroups(){
 const MESI3=["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
 const fmtMD = md => { const [m,d]=md.split("-"); return `${+d} ${MESI3[+m-1]}`; };
 function todayMD(){ const n=new Date(); return `${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; }
-function currentTournament(){ const md=todayMD(); const idx=TOURNAMENTS.findIndex(t=> md>=t.from && md<=t.to); return idx<0?null:{idx, t:TOURNAMENTS[idx]}; }
+function currentTournament(){ const y=new Date().getFullYear(); const md=todayMD(); const wins=tournamentWindows(y); const idx=wins.findIndex(w=> w && md>=w.from && md<=w.to); return idx<0?null:{idx, t:TOURNAMENTS[idx], win:wins[idx]}; }
 function nextTournament(){
   const md=todayMD();
   const up=TOURNAMENTS.filter(t=>t.from>md).sort((a,b)=>a.from.localeCompare(b.from))[0];
@@ -1020,8 +1063,9 @@ function computeAtp(){
   const pts={}, det={};
   tournamentGroups().forEach(g=>{
     const t=TOURNAMENTS[g.idx];
-    const start=new Date(`${g.year}-${t.from}T00:00:00`);
-    const end  =new Date(`${g.year}-${t.to}T23:59:59`);
+    const win=tournamentWindows(g.year)[g.idx];
+    const start=new Date(`${g.year}-${win.from}T00:00:00`);
+    const end  =new Date(`${g.year}-${win.to}T23:59:59`);
     if(end<cutoff || start>now) return; // fuori dalle ultime 52 settimane, o futuro
     const table=ATP_POINTS[t.tier], tail=ATP_TAIL[t.tier];
     soloRankFrom(g.matches).filter(s=>s.g>=ATP_MIN_GAMES).forEach((s,i)=>{
@@ -1040,7 +1084,7 @@ function computeTournamentTitles(){
   const T=pid=>titles[pid]||(titles[pid]={slam:0,m1000:0,m500:0});
   tournamentGroups().forEach(g=>{
     const t=TOURNAMENTS[g.idx];
-    const end=new Date(`${g.year}-${t.to}T23:59:59`);
+    const end=new Date(`${g.year}-${tournamentWindows(g.year)[g.idx].to}T23:59:59`);
     if(end>=now) return; // torneo non ancora concluso
     const w=soloRankFrom(g.matches).filter(s=>s.g>=ATP_MIN_GAMES)[0];
     if(w) T(w.id)[t.tier]++;
@@ -1727,7 +1771,7 @@ function renderAtp(){
     </tr>`).join("");
     liveCard = `<section class="card">
       <div class="card-head"><h2>Torneo in corso</h2><span class="cal-tier ${t.tier}">${tierShort[t.tier]}</span></div>
-      <p class="muted"><strong>${esc(t.name)}</strong> · ${fmtMD(t.from)}–${fmtMD(t.to)}. Punti provvisori in base alla posizione di ora.</p>
+      <p class="muted"><strong>${esc(t.name)}</strong> · ${fmtMD(cur.win.from)}–${fmtMD(cur.win.to)}. Punti provvisori in base alla posizione di ora.</p>
       ${ live.rows.length
         ? `<div class="table-scroll"><table><thead><tr><th class="rank">#</th><th>Giocatore</th><th class="num">Part.</th><th class="num">Elo</th><th class="num">Punti</th></tr></thead><tbody>${lrows}</tbody></table></div>`
         : `<div class="empty"><div class="big">Ancora nessun punteggio</div><p>Giocate qualche partita in questo periodo: servono almeno ${ATP_MIN_GAMES} partite per entrare nella classifica del torneo.</p></div>` }
@@ -1741,11 +1785,13 @@ function renderAtp(){
     </section>`;
   }
 
-  const cal = TOURNAMENTS.map(t=>{
-    const fm=t.from.slice(0,2), tm=t.to.slice(0,2);
+  const calWins = tournamentWindows(new Date().getFullYear());
+  const cal = TOURNAMENTS.map((t,idx)=>{
+    const w=calWins[idx];
+    const fm=w.from.slice(0,2), tm=w.to.slice(0,2);
     const periodo = fm===tm
-      ? `${+t.from.slice(3)}–${+t.to.slice(3)} ${MESI3[+fm-1]}`
-      : `${fmtMD(t.from)}–${fmtMD(t.to)}`;
+      ? `${+w.from.slice(3)}–${+w.to.slice(3)} ${MESI3[+fm-1]}`
+      : `${fmtMD(w.from)}–${fmtMD(w.to)}`;
     const running = cur && cur.t===t;
     return `<div class="cal-row ${tierClass[t.tier]}${running?' now':''}">
       <span class="cal-tier ${t.tier}">${tierShort[t.tier]}</span>
