@@ -3662,7 +3662,7 @@
     }
   ],
   "settings": {
-    "minSolo": 7,
+    "minSolo": 10,
     "minPair": 10
   }
 }
