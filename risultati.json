@@ -10426,7 +10426,7 @@
     }
   ],
   "settings": {
-    "minSolo": 10,
+    "minSolo": 8,
     "minPair": 10
   }
 }
