@@ -499,9 +499,13 @@ async function saveData(){
 // Per attivarla su tutta la pagina, incolla qui l'URL dell'app Web (finisce con /exec):
 const SYNC_URL = "https://script.google.com/macros/s/AKfycbyzd3OxPnXukcS_z-WWYwMAdzG6VVbTvgTvbXwJQEZvg9__RBSx-Rje3c0tU0VggUco/exec";
 const SYNC_KEY = "calcetto:sync";
-const DRIVE_PASS_KEY = "calcetto:drivepass";
+const DRIVE_PASS_KEY = "calcetto:drivepass"; // (legacy, non più usato)
 let syncUrl = "";
-let drivePass = "";
+// Login in memoria: NON viene salvato, si rifà a ogni sessione (scelta "chiedi ogni volta").
+let authUser = "";
+let authPass = "";
+let loggedIn = false;
+function canWrite(){ return loggedIn; }
 
 // File JSON condiviso caricato in automatico dalla stessa cartella del sito (es. GitHub Pages)
 const DATA_FILE = "risultati.json";
@@ -509,8 +513,6 @@ let dataSource = "locale"; // "locale" | "file" | "drive" | "github"
 
 function loadSyncUrl(){ try{ return localStorage.getItem(SYNC_KEY)||""; }catch(e){ return ""; } }
 function persistSyncUrl(u){ try{ if(u) localStorage.setItem(SYNC_KEY,u); else localStorage.removeItem(SYNC_KEY); }catch(e){} }
-function loadDrivePass(){ try{ return localStorage.getItem(DRIVE_PASS_KEY)||""; }catch(e){ return ""; } }
-function persistDrivePass(p){ try{ if(p) localStorage.setItem(DRIVE_PASS_KEY,p); else localStorage.removeItem(DRIVE_PASS_KEY); }catch(e){} }
 function setSyncStatus(msg, kind){ const el=document.getElementById("syncStatus"); if(el){ el.textContent=msg; el.dataset.kind=kind||""; } }
 
 async function cloudPull(){
@@ -519,17 +521,25 @@ async function cloudPull(){
   return JSON.parse(await res.text());
 }
 async function cloudPush(){
-  // text/plain evita il preflight CORS; la password autorizza la scrittura
+  // text/plain evita il preflight CORS; utente+password autorizzano la scrittura
   const res = await fetch(syncUrl, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
-    body:JSON.stringify({ pass: drivePass, data: state })});
+    body:JSON.stringify({ user: authUser, pass: authPass, data: state })});
   if(!res.ok) throw new Error("HTTP "+res.status);
   const out = await res.json().catch(()=>({}));
   if(out && out.ok===false) throw new Error(out.error||"non autorizzato");
   return true;
 }
+// Verifica le credenziali presso lo sportello Drive (usata dal pulsante "Accedi").
+async function authCheck(user, pass){
+  const res = await fetch(syncUrl, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body:JSON.stringify({ user, pass, check:true })});
+  if(!res.ok) throw new Error("HTTP "+res.status);
+  const out = await res.json().catch(()=>({}));
+  return !!(out && out.ok);
+}
 let pushTimer=null;
 function pushSoon(){
-  if(!syncUrl || !drivePass) return; // senza password la pagina è in sola lettura
+  if(!syncUrl || !loggedIn) return; // senza login la pagina è in sola lettura
   clearTimeout(pushTimer);
   setSyncStatus("Salvataggio sul Drive…");
   pushTimer=setTimeout(async ()=>{
@@ -1124,7 +1134,15 @@ function playerOptions(selected, exclude){
   return opts.join("");
 }
 
+function lockCard(title, msg){
+  return `<section class="card"><div class="empty">
+    <div class="big">🔒 ${esc(title)}</div>
+    <p>${esc(msg)}</p>
+    <button class="btn" onclick="go('data')">Vai all'accesso</button>
+  </div></section>`;
+}
 function renderPlay(){
+  if(!canWrite()){ views.innerHTML = lockCard("Accedi per registrare le partite","La classifica è in sola lettura. Per segnare una nuova partita accedi con utente e password dalla scheda Dati."); return; }
   if(state.players.length<4){
     views.innerHTML = `<section class="card"><div class="empty">
       <div class="big">Servono almeno 4 giocatori</div>
@@ -1184,6 +1202,7 @@ function renderPlay(){
 }
 
 function saveMatch(){
+  if(!canWrite()){ toast("Accedi per salvare le partite"); return; }
   const hint = document.getElementById("mhint");
   const ids=[mform.a1,mform.a2,mform.b1,mform.b2];
   if(ids.some(x=>!x)){ hint.innerHTML='<span class="err">Seleziona tutti e quattro i giocatori.</span>'; return; }
@@ -1852,8 +1871,8 @@ function renderPlayers(){
         return `<div class="prow" data-id="${p.id}">
           <span class="name-cell clk" style="flex:1" onclick="openProfile('${p.id}')">${avatarHtml(p.name)}<span class="pn">${esc(p.name)}</span></span>
           <span class="pmeta">${meta}</span>
-          <button class="icon-btn ren" title="Rinomina">✎</button>
-          <button class="icon-btn del" title="Elimina">🗑</button>
+          ${canWrite()? `<button class="icon-btn ren" title="Rinomina">✎</button>
+          <button class="icon-btn del" title="Elimina">🗑</button>` : ""}
         </div>`;
       }).join("")
     : `<div class="empty"><div class="big">Nessun giocatore</div><p>Aggiungi il primo collega qui sotto.</p></div>`;
@@ -1861,25 +1880,29 @@ function renderPlayers(){
   <section class="card">
     <h2>Giocatori</h2>
     <p class="muted">Aggiungi chi gioca a pranzo. Le statistiche sono riferite alla stagione selezionata.</p>
-    <div class="add-row">
+    ${ canWrite()
+      ? `<div class="add-row">
       <input class="text" id="newName" placeholder="Nome del giocatore" maxlength="24">
       <button class="btn" id="addPlayer">Aggiungi</button>
-    </div>
+    </div>`
+      : `<p class="muted">🔒 Accedi dalla scheda <strong>Dati</strong> per aggiungere o modificare i giocatori.</p>` }
     <div class="plist">${list}</div>
   </section>`;
 
-  const input = document.getElementById("newName");
-  const add = ()=>{
-    const n=(input.value||"").trim();
-    if(!n) return;
-    if(state.players.some(p=>p.name.toLowerCase()===n.toLowerCase())){ toast("Esiste già un giocatore con questo nome"); return; }
-    state.players.push({id:uid(), name:n}); saveData(); input.value=""; renderPlayers();
-  };
-  document.getElementById("addPlayer").addEventListener("click", add);
-  input.addEventListener("keydown", e=>{ if(e.key==="Enter") add(); });
-  input.focus();
+  if(canWrite()){
+    const input = document.getElementById("newName");
+    const add = ()=>{
+      const n=(input.value||"").trim();
+      if(!n) return;
+      if(state.players.some(p=>p.name.toLowerCase()===n.toLowerCase())){ toast("Esiste già un giocatore con questo nome"); return; }
+      state.players.push({id:uid(), name:n}); saveData(); input.value=""; renderPlayers();
+    };
+    document.getElementById("addPlayer").addEventListener("click", add);
+    input.addEventListener("keydown", e=>{ if(e.key==="Enter") add(); });
+    input.focus();
+  }
 
-  views.querySelectorAll(".prow").forEach(row=>{
+  if(canWrite()) views.querySelectorAll(".prow").forEach(row=>{
     const id=row.dataset.id;
     row.querySelector(".ren").addEventListener("click", async ()=>{
       const cur=byId(id); const nn=await promptDialog("Nuovo nome:", cur.name);
@@ -2100,7 +2123,7 @@ function renderHistory(){
         <span class="pill blue">${esc(nameOf(m.b[0]))} · ${esc(nameOf(m.b[1]))}</span>
       </div>
       <span class="mscore"><span class="${aWin?'win':''}">${m.sa}</span>–<span class="${!aWin?'win':''}">${m.sb}</span></span>
-      <button class="btn danger small del">Elimina</button>
+      ${canWrite()? `<button class="btn danger small del">Elimina</button>` : ""}
     </div>`;
   }).join("");
   views.innerHTML = `
@@ -2282,15 +2305,21 @@ function renderData(){
     <p class="sync-status" data-kind="${dataSource==='drive'?'ok':''}" style="margin:0 0 4px">${srcMsg}</p>
 
     <div class="data-box" style="margin:14px 0">
-      <h3>Sincronizzazione con Google Drive</h3>
-      <p>La classifica è condivisa: tutti la leggono in automatico. Per <strong>registrare le partite</strong> serve la password, che resta salvata solo nel tuo browser — inseriscila e premi Attiva.</p>
-      <input type="password" class="text" id="drivePassInput" placeholder="Password di scrittura" value="${esc(drivePass)}">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
-        <button class="btn" id="btnSaveSync">Attiva</button>
-        <button class="btn ghost" id="btnPullSync">Sincronizza ora</button>
-        <button class="btn ghost" id="btnClearSync">Disattiva</button>
-      </div>
-      <p class="sync-status" id="syncStatus" data-kind="${syncUrl?'ok':''}">${syncUrl ? (drivePass ? "Lettura e scrittura ✓" : "Sola lettura — inserisci la password per scrivere") : "Non configurata"}</p>
+      <h3>Accesso in scrittura</h3>
+      <p>La classifica è condivisa: tutti la leggono. Per <strong>registrare o modificare le partite</strong> serve l'accesso con utente e password. Non viene memorizzato: lo rifai a ogni sessione.</p>
+      ${ loggedIn
+        ? `<p class="sync-status" id="syncStatus" data-kind="ok">Accesso effettuato come <strong>${esc(authUser)}</strong> ✓ — lettura e scrittura</p>
+           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+             <button class="btn ghost" id="btnPullSync">Sincronizza ora</button>
+             <button class="btn ghost" id="btnLogout">Esci</button>
+           </div>`
+        : `<input type="text" class="text" id="loginUser" placeholder="Utente" autocomplete="username">
+           <input type="password" class="text" id="loginPass" placeholder="Password" autocomplete="current-password" style="margin-top:8px">
+           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+             <button class="btn" id="btnLogin">Accedi</button>
+             <button class="btn ghost" id="btnPullSync">Sincronizza ora</button>
+           </div>
+           <p class="sync-status" id="syncStatus">Sola lettura — accedi per scrivere</p>` }
     </div>
 
     <p class="muted">Puoi anche scaricare una copia completa in JSON da conservare, e ripristinarla quando vuoi.</p>
@@ -2319,26 +2348,28 @@ function renderData(){
     const f=e.target.files[0]; if(f) importJSON(f); e.target.value="";
   });
 
-  const drivePassInput = document.getElementById("drivePassInput");
-  document.getElementById("btnSaveSync").addEventListener("click", async ()=>{
-    if(!syncUrl){ toast("URL di sincronizzazione non impostato nel file"); return; }
-    drivePass=(drivePassInput.value||"").trim(); persistDrivePass(drivePass);
-    if(!drivePass){ toast("Inserisci la password per poter scrivere"); return; }
-    setSyncStatus("Connessione…");
+  const btnLogin = document.getElementById("btnLogin");
+  if(btnLogin) btnLogin.addEventListener("click", async ()=>{
+    if(!syncUrl){ toast("Sincronizzazione non configurata"); return; }
+    const u=(document.getElementById("loginUser").value||"").trim();
+    const p=(document.getElementById("loginPass").value||"");
+    if(!u || !p){ toast("Inserisci utente e password"); return; }
+    setSyncStatus("Verifica credenziali…");
     try{
-      const cloud = await cloudPull();
-      const next = normalizeImport(cloud);
-      const hasData = next.players.length || next.matches.length;
-      if(hasData){ state = next; season="all"; rebuildSeasons(); }
-      await cloudPush();
-      setSyncStatus("Lettura e scrittura ✓","ok");
-      toast("Scrittura attiva");
-      view="solo"; render();
-    }catch(e){
-      const msg = String(e.message||"");
-      if(/non autorizzato|401|403/.test(msg)){ setSyncStatus("Password di scrittura errata","err"); toast("Password errata"); }
-      else { setSyncStatus("Collegamento non riuscito","err"); toast("Impossibile collegarsi al Drive"); }
-    }
+      const ok = await authCheck(u, p);
+      if(!ok){ setSyncStatus("Utente o password errati","err"); toast("Credenziali errate"); return; }
+      authUser=u; authPass=p; loggedIn=true;
+      // mi allineo ai dati più recenti del Drive prima di scrivere
+      try{ const next=normalizeImport(await cloudPull()); if(next.players.length||next.matches.length){ state=next; season="all"; rebuildSeasons(); } }catch(e){}
+      toast("Accesso effettuato");
+      render();
+    }catch(e){ setSyncStatus("Collegamento non riuscito","err"); toast("Impossibile collegarsi al Drive"); }
+  });
+  const btnLogout = document.getElementById("btnLogout");
+  if(btnLogout) btnLogout.addEventListener("click", ()=>{
+    authUser=""; authPass=""; loggedIn=false;
+    toast("Uscito");
+    render();
   });
   document.getElementById("btnPullSync").addEventListener("click", async ()=>{
     if(!syncUrl){ toast("Sincronizzazione non attiva"); return; }
@@ -2346,15 +2377,9 @@ function renderData(){
     try{
       const next = normalizeImport(await cloudPull());
       state = next; season="all"; rebuildSeasons();
-      setSyncStatus(drivePass ? "Aggiornato — lettura e scrittura ✓" : "Aggiornato — sola lettura ✓","ok");
+      setSyncStatus(loggedIn ? "Aggiornato — lettura e scrittura ✓" : "Aggiornato — sola lettura ✓","ok");
       view="solo"; render();
     }catch(e){ setSyncStatus("Drive non raggiungibile","err"); }
-  });
-  document.getElementById("btnClearSync").addEventListener("click", ()=>{
-    persistSyncUrl(""); syncUrl = SYNC_URL || "";
-    persistDrivePass(""); drivePass = "";
-    setSyncStatus(syncUrl ? "Attiva dall'URL nel codice" : "Sincronizzazione disattivata", syncUrl?"ok":"");
-    toast("Sincronizzazione disattivata");
   });
 }
 
@@ -2444,7 +2469,6 @@ document.getElementById("season").addEventListener("change", e=>{ season=e.targe
 (async function init(){
   wireModal();
   syncUrl = loadSyncUrl() || SYNC_URL;
-  drivePass = loadDrivePass();
   ghToken = loadGhToken();
   try{ const c=localStorage.getItem(DRIVE_AV_KEY); if(c) driveAvatars=JSON.parse(c); }catch(e){} // foto Drive da cache (istantanee)
   state = await loadData();
